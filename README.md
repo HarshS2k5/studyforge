@@ -2,6 +2,12 @@
 > *Study smarter. Learn better.*  
 > An all-in-one, modern educational platform designed for student learning, revision, practice, and organization.
 
+[![Live on Vercel](https://img.shields.io/badge/Vercel-Live%20Demo-black?style=flat&logo=vercel)](https://studyforge-ecru-theta.vercel.app)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=flat&logo=github)](https://github.com/HarshS2k5/studyforge)
+
+- **🌐 Live Production Website:** [https://studyforge-ecru-theta.vercel.app](https://studyforge-ecru-theta.vercel.app)
+- **🐙 GitHub Repository:** [https://github.com/HarshS2k5/studyforge](https://github.com/HarshS2k5/studyforge)
+
 ---
 
 ## 🌟 Overview
