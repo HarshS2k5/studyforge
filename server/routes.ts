@@ -15,6 +15,15 @@ import { askTutor, transformNote, scanQuestion, generateFlashcardsAi } from './t
 
 const router = Router();
 
+// Health check endpoint
+router.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    service: 'StudyForge Core API',
+  });
+});
+
 // ==========================================
 // 1. AUTHENTICATION & PROFILE
 // ==========================================
