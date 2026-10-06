@@ -266,4 +266,81 @@ export const api = {
 
   // Notifications
   getNotifications: () => request<{ notifications: NotificationItem[]; unreadCount: number }>('/notifications'),
+
+  // Smart Session & "I Have X Minutes"
+  getSmartNextActivity: () => request<{ recommendation: SmartRecommendation }>('/smart-session/next'),
+  generateXMinuteSession: (minutes: number) => request<{ sessionPlan: TimedSessionPlan }>('/smart-session/x-minutes', { method: 'POST', body: JSON.stringify({ minutes }) }),
+
+  // AI Learning Paths
+  generateLearningPlan: (body: { subject: string; examDate: string; syllabusTopics?: string[]; currentLevel?: string; dailyMinutes?: number }) =>
+    request<{ schedule: LearningPathScheduleItem[]; totalDays: number; subject: string; examDate: string }>('/learning-paths/generate', { method: 'POST', body: JSON.stringify(body) }),
+  createLearningPath: (body: any) => request<{ id: number; title: string; schedule: LearningPathScheduleItem[]; message: string }>('/learning-paths', { method: 'POST', body: JSON.stringify(body) }),
+  getLearningPaths: () => request<{ paths: LearningPathData[] }>('/learning-paths'),
+  getLearningPathById: (id: number | string) => request<{ path: LearningPathData }>(`/learning-paths/${id}`),
+  completeLearningPathItem: (pathId: number | string, itemId: string) => request<{ message: string; schedule: LearningPathScheduleItem[] }>(`/learning-paths/${pathId}/items/${itemId}/complete`, { method: 'PUT' }),
+  adaptLearningPath: (pathId: number | string, body: any) => request<{ message: string; summary: string; schedule: LearningPathScheduleItem[] }>(`/learning-paths/${pathId}/adapt`, { method: 'POST', body: JSON.stringify(body) }),
+
+  // Syllabus Importer
+  previewSyllabus: (body: { text?: string; imageBase64?: string; mimeType?: string; defaultSubject?: string }) =>
+    request<{ preview: ParsedSyllabusResult }>('/syllabus/preview', { method: 'POST', body: JSON.stringify(body) }),
+  confirmSyllabus: (body: { subjects: any[]; detectedExamDates?: any[] }) =>
+    request<{ message: string; createdSummary: { chapters: number; topics: number; exams: number } }>('/syllabus/confirm', { method: 'POST', body: JSON.stringify(body) }),
+
+  // Textbook / Chapter Assistant
+  analyzeMaterial: (body: { title: string; content: string; subject_id?: number }) =>
+    request<{ id: number; title: string; analysis: TextbookAnalysisResult; message: string }>('/materials/analyze', { method: 'POST', body: JSON.stringify(body) }),
+  getMaterials: () => request<{ materials: UploadedMaterial[] }>('/materials'),
+  getMaterialById: (id: number | string) => request<{ material: UploadedMaterial }>(`/materials/${id}`),
+  convertMaterialToDeck: (materialId: number | string, cards: any[]) =>
+    request<{ deckId: number; message: string }>(`/materials/${materialId}/convert-to-deck`, { method: 'POST', body: JSON.stringify({ cards }) }),
+
+  // Personal Records
+  getPersonalRecords: () => request<{ records: PersonalRecords }>('/records'),
+
+  // Study Calendar
+  getCalendarEvents: (params?: { view?: string; start?: string; end?: string }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return request<{ events: CalendarEvent[] }>(`/calendar/events?${query}`);
+  },
+
+  // Private Study Groups
+  createStudyGroup: (body: { name: string; description?: string; subject_name?: string }) =>
+    request<{ id: number; name: string; invite_code: string; message: string }>('/groups', { method: 'POST', body: JSON.stringify(body) }),
+  joinStudyGroup: (invite_code: string) => request<{ message: string; groupId: number }>('/groups/join', { method: 'POST', body: JSON.stringify({ invite_code }) }),
+  getStudyGroups: () => request<{ groups: StudyGroup[] }>('/groups'),
+  getStudyGroupDetails: (groupId: number | string) =>
+    request<{ group: StudyGroup; members: StudyGroupMember[]; sharedNotes: StudyGroupSharedNote[]; challenges: StudyGroupChallenge[]; userRole: string }>(`/groups/${groupId}`),
+  shareNoteToGroup: (groupId: number | string, body: { title: string; content: string; note_id?: number }) =>
+    request<{ id: number; message: string }>(`/groups/${groupId}/notes`, { method: 'POST', body: JSON.stringify(body) }),
+  createGroupChallenge: (groupId: number | string, body: { title: string; target_minutes?: number; deadline?: string; xp_reward?: number }) =>
+    request<{ id: number; message: string }>(`/groups/${groupId}/challenges`, { method: 'POST', body: JSON.stringify(body) }),
+  leaveStudyGroup: (groupId: number | string) => request<{ message: string }>(`/groups/${groupId}/leave`, { method: 'DELETE' }),
+
+  // Smart Goals
+  createSmartGoal: (body: { title: string; deadline?: string; subject_id?: number }) =>
+    request<{ id: number; title: string; deadline: string; tasks: SmartGoalTask[]; message: string }>('/smart-goals', { method: 'POST', body: JSON.stringify(body) }),
+  getSmartGoals: () => request<{ goals: SmartGoal[] }>('/smart-goals'),
+  toggleSmartGoalTask: (goalId: number | string, taskId: number | string) =>
+    request<{ taskId: number; is_completed: number; goalProgress: number; isGoalCompleted: boolean; xpEarned: number }>(`/smart-goals/${goalId}/tasks/${taskId}/toggle`, { method: 'PUT' }),
+
+  // Adaptive Practice Lab
+  getPracticeLabQuestion: (params: { subject_id?: number | string; topic?: string; currentStreak?: number }) => {
+    const query = new URLSearchParams(params as any).toString();
+    return request<{ question: Question | null; currentDifficulty: string; streak: number }>(`/practice-lab/question?${query}`);
+  },
+  submitPracticeLabAnswer: (body: { question_id: number; user_answer: string; time_taken_seconds?: number; currentStreak?: number }) =>
+    request<{ is_correct: boolean; correct_answer: string; explanation: string; newStreak: number; nextDifficulty: string; feedbackMessage: string }>('/practice-lab/answer', { method: 'POST', body: JSON.stringify(body) }),
+
+  // Smart Streak Recovery
+  getStreakRecoveryStatus: () => request<StreakRecoveryStatus>('/streak/recovery-status'),
+  recoverStreak: () => request<{ message: string; recovered: boolean }>('/streak/recover', { method: 'POST' }),
+
+  // Concept Maps
+  getConceptMaps: () => request<{ conceptTree: any[] }>('/concept-maps'),
+
+  // AI Weekly Report
+  getWeeklyReport: () => request<{ report: WeeklyReportData }>('/analytics/weekly-report'),
+
+  // Anti-Cram Mode
+  getAntiCramData: () => request<AntiCramData>('/anti-cram'),
 };

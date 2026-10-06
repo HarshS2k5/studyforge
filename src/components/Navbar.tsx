@@ -22,6 +22,7 @@ import {
   Calendar,
   AlertCircle,
   ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -48,6 +49,17 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [toolsDropdownOpen, setToolsDropdownOpen] = useState(false);
+
+  const toolLinks = [
+    { label: 'Learning Path', path: '/learning-path', icon: '🧭' },
+    { label: 'Syllabus Importer', path: '/syllabus-importer', icon: '📑' },
+    { label: 'Textbook AI', path: '/textbook-assistant', icon: '📖' },
+    { label: 'Study Calendar', path: '/calendar', icon: '📅' },
+    { label: 'Practice Lab', path: '/practice-lab', icon: '⚡' },
+    { label: 'Concept Maps', path: '/concept-maps', icon: '🗺️' },
+    { label: 'Study Groups', path: '/study-groups', icon: '👥' },
+  ];
 
   // Notifications State
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -128,6 +140,39 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             );
           })}
+
+          {/* More Tools Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setToolsDropdownOpen(!toolsDropdownOpen);
+                setUserDropdownOpen(false);
+                setNotificationsOpen(false);
+              }}
+              className="px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/60 dark:hover:bg-slate-800/60"
+            >
+              <span>More Tools</span>
+              <ChevronDown className="w-3 h-3" />
+            </button>
+
+            {toolsDropdownOpen && (
+              <div
+                className="absolute left-0 mt-2 w-52 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl py-2 z-50 text-xs animate-scale-in"
+                onClick={() => setToolsDropdownOpen(false)}
+              >
+                {toolLinks.map(t => (
+                  <button
+                    key={t.path}
+                    onClick={() => onNavigate(t.path)}
+                    className="w-full text-left px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center gap-2.5 text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                  >
+                    <span>{t.icon}</span>
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </nav>
 
         {/* Right: Search, Streak, XP, Notifications, Theme, User */}
@@ -380,6 +425,26 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             );
           })}
+
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="text-[10px] uppercase font-bold text-slate-400 px-3 py-1">Advanced Study Tools</div>
+            <div className="grid grid-cols-2 gap-1 px-1">
+              {toolLinks.map(t => (
+                <button
+                  key={t.path}
+                  onClick={() => {
+                    onNavigate(t.path);
+                    setMobileMenuOpen(false);
+                  }}
+                  className="text-left px-3 py-2 rounded-xl text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1.5 cursor-pointer font-medium"
+                >
+                  <span>{t.icon}</span>
+                  <span>{t.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <button
               onClick={() => {

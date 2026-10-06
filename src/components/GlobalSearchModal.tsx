@@ -18,6 +18,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
     notes: any[];
     questions: any[];
     flashcards: any[];
+    exams?: any[];
+    smartGoals?: any[];
+    materials?: any[];
   }>({
     subjects: [],
     chapters: [],
@@ -26,6 +29,9 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
     notes: [],
     questions: [],
     flashcards: [],
+    exams: [],
+    smartGoals: [],
+    materials: [],
   });
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,7 +75,10 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
     results.lessons.length +
     results.notes.length +
     results.questions.length +
-    results.flashcards.length;
+    results.flashcards.length +
+    (results.exams?.length || 0) +
+    (results.smartGoals?.length || 0) +
+    (results.materials?.length || 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-20 bg-slate-900/60 backdrop-blur-sm">
@@ -284,6 +293,99 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
                         {q.question_text}
                       </div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">{q.subject_name} • {q.topic}</div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-all" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Exams */}
+          {results.exams && results.exams.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-rose-500 px-2 mb-2 flex items-center gap-1.5">
+                🔴 Exams ({results.exams.length})
+              </div>
+              <div className="space-y-1">
+                {results.exams.map(e => (
+                  <button
+                    key={e.id}
+                    onClick={() => {
+                      onNavigate('/calendar');
+                      onClose();
+                    }}
+                    className="w-full text-left p-3 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between group transition-colors cursor-pointer"
+                  >
+                    <div>
+                      <div className="font-semibold text-sm text-slate-900 dark:text-white">
+                        {e.title}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {e.subject} • Date: {e.date}
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-all" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Smart Goals */}
+          {results.smartGoals && results.smartGoals.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-emerald-500 px-2 mb-2 flex items-center gap-1.5">
+                🟢 Smart Goals ({results.smartGoals.length})
+              </div>
+              <div className="space-y-1">
+                {results.smartGoals.map(g => (
+                  <button
+                    key={g.id}
+                    onClick={() => {
+                      onNavigate('/dashboard');
+                      onClose();
+                    }}
+                    className="w-full text-left p-3 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between group transition-colors cursor-pointer"
+                  >
+                    <div>
+                      <div className="font-semibold text-sm text-slate-900 dark:text-white">
+                        {g.title}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        Progress: {g.progress_percent}% • Target: {g.target_date || 'Ongoing'}
+                      </div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-all" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Materials */}
+          {results.materials && results.materials.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-purple-500 px-2 mb-2 flex items-center gap-1.5">
+                📖 Study Materials ({results.materials.length})
+              </div>
+              <div className="space-y-1">
+                {results.materials.map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      onNavigate('/textbook-assistant');
+                      onClose();
+                    }}
+                    className="w-full text-left p-3 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between group transition-colors cursor-pointer"
+                  >
+                    <div>
+                      <div className="font-semibold text-sm text-slate-900 dark:text-white">
+                        {m.title}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {m.subject} • {m.chapter || 'Excerpt'}
+                      </div>
                     </div>
                     <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-all" />
                   </button>

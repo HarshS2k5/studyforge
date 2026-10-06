@@ -378,6 +378,130 @@ export function initDatabase() {
       UNIQUE(user_id, plan_date),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS learning_paths (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      subject_id INTEGER,
+      exam_id INTEGER,
+      title TEXT NOT NULL,
+      target_exam_date TEXT,
+      current_level TEXT DEFAULT 'intermediate',
+      daily_minutes INTEGER DEFAULT 30,
+      syllabus_topics_json TEXT NOT NULL,
+      schedule_json TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE SET NULL,
+      FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS uploaded_materials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      subject_id INTEGER,
+      title TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      file_type TEXT DEFAULT 'text',
+      content_text TEXT NOT NULL,
+      summary TEXT,
+      key_definitions_json TEXT DEFAULT '[]',
+      important_points_json TEXT DEFAULT '[]',
+      difficult_topics_json TEXT DEFAULT '[]',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS personal_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      record_type TEXT NOT NULL,
+      record_value REAL NOT NULL,
+      achieved_date TEXT NOT NULL,
+      metadata_json TEXT DEFAULT '{}',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, record_type),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS study_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      invite_code TEXT UNIQUE NOT NULL,
+      created_by INTEGER NOT NULL,
+      subject_name TEXT DEFAULT 'General Studies',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS study_group_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      role TEXT DEFAULT 'member',
+      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(group_id, user_id),
+      FOREIGN KEY (group_id) REFERENCES study_groups(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS study_group_shared_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      note_id INTEGER,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      shared_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (group_id) REFERENCES study_groups(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS study_group_challenges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      target_minutes INTEGER DEFAULT 60,
+      deadline TEXT,
+      xp_reward INTEGER DEFAULT 50,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (group_id) REFERENCES study_groups(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS smart_goals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      subject_id INTEGER,
+      deadline TEXT NOT NULL,
+      progress_percent INTEGER DEFAULT 0,
+      is_completed INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS smart_goal_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      goal_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      order_num INTEGER DEFAULT 1,
+      task_type TEXT DEFAULT 'practice',
+      is_completed INTEGER DEFAULT 0,
+      FOREIGN KEY (goal_id) REFERENCES smart_goals(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS streak_recoveries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      missed_date TEXT NOT NULL,
+      is_recovered INTEGER DEFAULT 0,
+      recovered_at DATETIME,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
   `);
 
   // Safe idempotent column additions

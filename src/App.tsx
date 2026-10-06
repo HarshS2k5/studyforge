@@ -35,6 +35,13 @@ import { AboutPage } from './pages/AboutPage';
 import { SubjectDetailPage } from './pages/SubjectDetailPage';
 import { HomeworkPage } from './pages/HomeworkPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { LearningPathPage } from './pages/LearningPathPage';
+import { SyllabusImporterPage } from './pages/SyllabusImporterPage';
+import { TextbookAssistantPage } from './pages/TextbookAssistantPage';
+import { StudyCalendarPage } from './pages/StudyCalendarPage';
+import { StudyGroupsPage } from './pages/StudyGroupsPage';
+import { ConceptMapsPage } from './pages/ConceptMapsPage';
+import { PracticeLabPage } from './pages/PracticeLabPage';
 
 export const App: React.FC = () => {
   const { user } = useAuth();
@@ -222,6 +229,34 @@ export const App: React.FC = () => {
 
     if (currentPath === '/about' || currentPath.startsWith('/about')) {
       return <AboutPage onNavigate={navigate} />;
+    }
+
+    if (currentPath === '/learning-path') {
+      return <LearningPathPage onNavigate={navigate} />;
+    }
+
+    if (currentPath === '/syllabus-importer') {
+      return <SyllabusImporterPage onNavigate={navigate} />;
+    }
+
+    if (currentPath === '/textbook-assistant') {
+      return <TextbookAssistantPage onNavigate={navigate} />;
+    }
+
+    if (currentPath === '/calendar') {
+      return <StudyCalendarPage onNavigate={navigate} />;
+    }
+
+    if (currentPath === '/study-groups' || currentPath === '/groups') {
+      return <StudyGroupsPage onNavigate={navigate} />;
+    }
+
+    if (currentPath === '/concept-maps') {
+      return <ConceptMapsPage onNavigate={navigate} />;
+    }
+
+    if (currentPath === '/practice-lab') {
+      return <PracticeLabPage onNavigate={navigate} />;
     }
 
     // Default fallback to Landing or Dashboard

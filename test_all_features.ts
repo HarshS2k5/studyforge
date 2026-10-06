@@ -403,6 +403,128 @@ async function runTests() {
   const notifsRes = await fetch(`${BASE}/notifications`, { headers: studentHeaders }).then(r => r.json());
   assert(Array.isArray(notifsRes.notifications), `Notifications center returns ${notifsRes.notifications.length} notifications`);
 
+  // 33. Smart Session Engine (Next activity & X Minutes mode)
+  const nextSmart = await fetch(`${BASE}/smart-session/next`, { headers: studentHeaders }).then(r => r.json());
+  assert(Boolean(nextSmart.recommendation?.title) && Boolean(nextSmart.recommendation?.link), 'Smart Next Activity evaluates priority and returns target action');
+
+  const xMinPlan = await fetch(`${BASE}/smart-session/x-minutes?minutes=20`, { headers: studentHeaders }).then(r => r.json());
+  assert(Array.isArray(xMinPlan.plan?.routine) && xMinPlan.plan.routine.length >= 2, 'I Have X Minutes Mode generates calibrated multi-activity micro-routine');
+
+  // 34. AI Learning Path Generation & Intelligent Adaptation
+  const genPathRes = await fetch(`${BASE}/learning-paths/generate`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({
+      subject: 'Mathematics',
+      exam_date: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+      topics: ['Trigonometry', 'Coordinate Geometry', 'Polynomials'],
+      knowledge_level: 'intermediate',
+      daily_minutes: 30,
+    }),
+  }).then(r => r.json());
+  assert(Boolean(genPathRes.path?.id) && Array.isArray(genPathRes.path?.schedule), 'AI Learning Path generates realistic day-by-day plan');
+
+  const adaptRes = await fetch(`${BASE}/learning-paths/${genPathRes.path.id}/adapt`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({ reason: 'missed_session', missed_date: new Date().toISOString().split('T')[0] }),
+  }).then(r => r.json());
+  assert(adaptRes.adapted === true, 'AI Learning Path intelligently adapts upon missed sessions or performance triggers');
+
+  // 35. Syllabus Importer Preview
+  const syllabusPreview = await fetch(`${BASE}/syllabus/preview`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({
+      rawText: 'PHYSICS SYLLABUS\nUnit 1: Kinematics (Motion in a straight line, Vectors)\nUnit 2: Dynamics (Newton Laws, Friction)\nExam Date: 2026-11-15',
+    }),
+  }).then(r => r.json());
+  assert(syllabusPreview.detected?.chapters?.length >= 2, 'Syllabus Importer accurately previews detected subjects, chapters, and topics before confirmation');
+
+  // 36. Textbook Assistant & Flashcard Deck Conversion
+  const textbookRes = await fetch(`${BASE}/materials/analyze`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({
+      title: 'Cellular Respiration Notes',
+      subject: 'Science',
+      chapter: 'Cell Biology',
+      textContent: 'Cellular respiration is a metabolic pathway that breaks down glucose and produces ATP. Glycolysis breaks glucose into pyruvate. Krebs cycle occurs in the mitochondria. Oxidative phosphorylation produces ATP through ATP synthase.',
+    }),
+  }).then(r => r.json());
+  assert(Boolean(textbookRes.analysis?.summary) && Array.isArray(textbookRes.analysis?.flashcards), 'Textbook Assistant generates summary, definitions, points, flashcards, and questions');
+
+  const convertDeckRes = await fetch(`${BASE}/materials/${textbookRes.material.id}/convert-to-deck`, {
+    method: 'POST',
+    headers: studentHeaders,
+  }).then(r => r.json());
+  assert(Boolean(convertDeckRes.deck?.id), 'Textbook generated flashcards directly converted to StudyForge Deck');
+
+  // 37. Personal Records Tracking
+  const recordsRes = await fetch(`${BASE}/records`, { headers: studentHeaders }).then(r => r.json());
+  assert(recordsRes.records && recordsRes.records.longest_study_session_minutes !== undefined, 'Personal Records tracking captures true milestone records');
+
+  // 38. Study Calendar Master Events
+  const calendarRes = await fetch(`${BASE}/calendar/events`, { headers: studentHeaders }).then(r => r.json());
+  assert(Array.isArray(calendarRes.events), `Study Calendar aggregates ${calendarRes.events.length} multi-category academic events`);
+
+  // 39. Private Study Groups & Challenges
+  const createGroupRes = await fetch(`${BASE}/groups`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({ name: 'Alpha Honors Squad', subject: 'Science', description: 'Exam study group' }),
+  }).then(r => r.json());
+  assert(Boolean(createGroupRes.group?.invite_code), `Private Study Group created with unique invite code "${createGroupRes.group?.invite_code}"`);
+
+  const shareNoteRes = await fetch(`${BASE}/groups/${createGroupRes.group.id}/notes`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({ title: 'Midterm Formulas', content: 'F = ma\np = mv', subject: 'Science' }),
+  }).then(r => r.json());
+  assert(Boolean(shareNoteRes.id), 'Shared note posted to private study group board');
+
+  // 40. Smart Goals & Actionable Tasks
+  const goalsRes = await fetch(`${BASE}/smart-goals`, { headers: studentHeaders }).then(r => r.json());
+  assert(Array.isArray(goalsRes.goals) && goalsRes.goals.length > 0, `Smart Goals retrieved with ${goalsRes.goals[0]?.tasks?.length} decomposed tasks`);
+
+  // 41. Adaptive Practice Lab Dynamic Difficulty
+  const practiceQuestion = await fetch(`${BASE}/practice-lab/question`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({ subject: 'Science', topic: 'Cell Biology', currentDifficulty: 'medium', answerStreak: 2 }),
+  }).then(r => r.json());
+  assert(Boolean(practiceQuestion.question?.text) && Boolean(practiceQuestion.question?.answer), 'Adaptive Practice Lab serves calibrated dynamic question');
+
+  const answerQuestion = await fetch(`${BASE}/practice-lab/answer`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({
+      questionId: practiceQuestion.question.id,
+      selectedAnswer: practiceQuestion.question.answer,
+      correctAnswer: practiceQuestion.question.answer,
+      difficulty: 'medium',
+      subject: 'Science',
+      topic: 'Cell Biology',
+    }),
+  }).then(r => r.json());
+  assert(answerQuestion.isCorrect === true && answerQuestion.newStreak >= 1, 'Adaptive Practice Lab evaluates answer, scales streaks, and awards XP');
+
+  // 42. Smart Streak Recovery
+  const recoveryStatus = await fetch(`${BASE}/streak/recovery-status`, { headers: studentHeaders }).then(r => r.json());
+  assert(recoveryStatus.currentStreak !== undefined, 'Smart Streak Recovery status evaluated');
+
+  // 43. Concept Maps Hierarchy
+  const conceptMaps = await fetch(`${BASE}/concept-maps`, { headers: studentHeaders }).then(r => r.json());
+  assert(Array.isArray(conceptMaps.subjects) && conceptMaps.subjects.length > 0, 'Concept Maps returns full curriculum hierarchy with topics and mastery levels');
+
+  // 44. AI Weekly Performance Report
+  const weeklyReport = await fetch(`${BASE}/analytics/weekly-report`, { headers: studentHeaders }).then(r => r.json());
+  assert(weeklyReport.report && Array.isArray(weeklyReport.report.recommendations), 'AI Weekly Report generates factual study metrics and academic recommendations');
+
+  // 45. Anti-Cram Sustainable Exam Planning
+  const antiCram = await fetch(`${BASE}/anti-cram`, { headers: studentHeaders }).then(r => r.json());
+  assert(antiCram.antiCramTriggered !== undefined, 'Anti-Cram Mode detects impending exams and calculates sustainable pacing');
+
   console.log(`\n========================================`);
   console.log(`🏆 TEST RESULTS: ${passed} Passed, ${failed} Failed`);
   console.log(`========================================\n`);

@@ -360,12 +360,257 @@ export interface AnalyticsOverview {
 }
 
 export interface UserSettings {
+  id?: number;
+  username?: string;
+  email?: string;
+  grade?: string;
+  learning_goals?: string;
+  study_style?: string;
+  daily_target_minutes?: number;
+  notifications_enabled?: number | boolean;
+  theme_preference?: string;
+}
+
+export interface SmartRecommendation {
+  subject: string;
+  subjectId?: number;
+  chapterId?: number;
+  topic: string;
+  activityType: 'review_weak_topic' | 'exam_prep' | 'homework' | 'flashcards' | 'practice_lab' | 'smart_goal';
+  recommendedMinutes: number;
+  title: string;
+  rationale: string;
+  directUrl: string;
+  urgency: 'high' | 'medium' | 'normal';
+}
+
+export interface MinuteBreakdownItem {
+  minuteDuration: number;
+  activityType: string;
+  title: string;
+  topic: string;
+  description: string;
+  link: string;
+}
+
+export interface TimedSessionPlan {
+  totalMinutes: number;
+  title: string;
+  items: MinuteBreakdownItem[];
+  rationale: string;
+}
+
+export interface LearningPathScheduleItem {
+  id: string;
+  dayIndex: number;
+  dayName: string;
+  dateStr: string;
+  subject: string;
+  topic: string;
+  activityType: 'concept_study' | 'practice_drill' | 'spaced_flashcards' | 'checkpoint_quiz' | 'mistake_review' | 'rest_or_light_review';
+  durationMinutes: number;
+  status: 'pending' | 'completed' | 'missed' | 'adapted';
+  completedAt?: string;
+  adaptationNote?: string;
+}
+
+export interface LearningPathData {
+  id: number;
+  user_id: number;
+  subject_id?: number;
+  subject_name?: string;
+  exam_id?: number;
+  title: string;
+  target_exam_date: string;
+  current_level: 'beginner' | 'intermediate' | 'advanced';
+  daily_minutes: number;
+  syllabusTopics: string[];
+  schedule: LearningPathScheduleItem[];
+  progressPercent: number;
+  completedCount: number;
+  totalMilestones: number;
+  created_at: string;
+}
+
+export interface ParsedSyllabusSubject {
+  name: string;
+  code?: string;
+  gradeLevel?: string;
+  chapters: Array<{
+    title: string;
+    description?: string;
+    topics: string[];
+    importantSections?: string[];
+  }>;
+}
+
+export interface ParsedSyllabusResult {
+  title: string;
+  subjects: ParsedSyllabusSubject[];
+  detectedExamDates: Array<{
+    title: string;
+    subjectName: string;
+    date: string;
+  }>;
+  importantNotes: string[];
+  confidenceScore: number;
+}
+
+export interface TextbookAnalysisResult {
+  summary: string;
+  importantConcepts: Array<{ name: string; explanation: string; difficulty: 'easy' | 'medium' | 'hard' }>;
+  keyDefinitions: Array<{ term: string; definition: string }>;
+  importantPoints: string[];
+  simpleExplanation: string;
+  difficultTopics: string[];
+  generatedFlashcards: Array<{ front: string; back: string; difficulty: 'easy' | 'medium' | 'hard' }>;
+  practiceQuestions: Array<{
+    question: string;
+    options: string[];
+    correctAnswer: string;
+    explanation: string;
+  }>;
+}
+
+export interface UploadedMaterial {
+  id: number;
+  user_id: number;
+  subject_id?: number;
+  subject_name?: string;
+  title: string;
+  file_name: string;
+  file_type: string;
+  content_text: string;
+  summary: string;
+  keyDefinitions: Array<{ term: string; definition: string }>;
+  importantPoints: string[];
+  difficultTopics: string[];
+  created_at: string;
+}
+
+export interface PersonalRecords {
+  [recordType: string]: {
+    value: number;
+    achievedDate: string;
+    meta?: any;
+  };
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  category: 'exam' | 'homework' | 'study_session' | 'learning_path' | 'goal';
+  date: string;
+  subject?: string;
+  priority?: string;
+  status?: string;
+  duration?: number;
+  badge?: string;
+  color: string;
+}
+
+export interface StudyGroup {
+  id: number;
+  name: string;
+  description: string;
+  invite_code: string;
+  created_by: number;
+  subject_name: string;
+  member_count: number;
+  user_role: 'admin' | 'member';
+  created_at: string;
+}
+
+export interface StudyGroupMember {
   id: number;
   username: string;
-  email: string;
-  grade: string;
-  learning_goals: string;
-  study_style: string;
-  daily_target_minutes: number;
-  notifications_enabled: number;
+  xp: number;
+  level: number;
+  streak: number;
+  role: 'admin' | 'member';
+  joined_at: string;
 }
+
+export interface StudyGroupSharedNote {
+  id: number;
+  group_id: number;
+  user_id: number;
+  author_name: string;
+  title: string;
+  content: string;
+  shared_at: string;
+}
+
+export interface StudyGroupChallenge {
+  id: number;
+  group_id: number;
+  title: string;
+  target_minutes: number;
+  deadline?: string;
+  xp_reward: number;
+  created_at: string;
+}
+
+export interface SmartGoalTask {
+  id: number;
+  goal_id: number;
+  title: string;
+  order_num: number;
+  task_type: string;
+  is_completed: number;
+}
+
+export interface SmartGoal {
+  id: number;
+  user_id: number;
+  title: string;
+  subject_id?: number;
+  subject_name?: string;
+  deadline: string;
+  progress_percent: number;
+  is_completed: number;
+  tasks: SmartGoalTask[];
+  remaining_tasks_count: number;
+  next_action: string;
+  created_at: string;
+}
+
+export interface StreakRecoveryStatus {
+  canRecover: boolean;
+  currentStreak: number;
+  missedDate: string;
+  recoverySessionMinutes: number;
+  cooldownActive: boolean;
+}
+
+export interface WeeklyReportData {
+  username: string;
+  totalStudyMinutes: number;
+  priorWeekMinutes: number;
+  timeGrowthPercent: number;
+  quizzesTaken: number;
+  averageAccuracy: number;
+  tasksCompleted: number;
+  flashcardsReviewed: number;
+  strongestTopics: string[];
+  weakestTopics: string[];
+  currentStreak: number;
+  recommendations: string[];
+}
+
+export interface AntiCramData {
+  active: boolean;
+  exam?: {
+    id: number;
+    title: string;
+    subject: string;
+    examDate: string;
+    daysLeft: number;
+  };
+  remainingTopicsCount?: number;
+  remainingTopicSamples?: string[];
+  recommendedDailyMinutes?: number;
+  antiCramAdvice?: string;
+  message?: string;
+}
+
