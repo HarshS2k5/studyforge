@@ -974,6 +974,87 @@ Remember: Arrays MUST be sorted before binary search can work!`
     );
   }
 
+  // 12. Topics & Topic Progress
+  const existingTopicsCount = (db.prepare('SELECT count(*) as c FROM topics').get() as { c: number }).c;
+  if (existingTopicsCount === 0) {
+    const chapters = db.prepare('SELECT id, title, subject_id FROM chapters').all() as { id: number; title: string; subject_id: number }[];
+    const insertTopic = db.prepare('INSERT INTO topics (chapter_id, title, order_num, description) VALUES (?, ?, ?, ?)');
+    const insertProg = db.prepare('INSERT OR IGNORE INTO user_topic_progress (user_id, topic_id, status) VALUES (?, ?, ?)');
+
+    for (const ch of chapters) {
+      let topicNames: string[] = [];
+      if (ch.title.includes('Fraction')) {
+        topicNames = ['Proper & Improper Fractions', 'Decimal Conversions', 'Like & Unlike Denominators', 'Mixed Number Arithmetic'];
+      } else if (ch.title.includes('Algebra')) {
+        topicNames = ['Variables & Constants', 'Linear Equations', 'Quadratic Expressions', 'Factoring Polynomials'];
+      } else if (ch.title.includes('Geometry')) {
+        topicNames = ['Pythagorean Theorem', 'Angle Sum Property', 'Coordinate Plane Distance', 'Congruence & Similarity'];
+      } else if (ch.title.includes('Nutrition')) {
+        topicNames = ['Photosynthesis & Chloroplasts', 'Human Alimentary Canal', 'Cellular Respiration', 'Enzyme Catalysis'];
+      } else if (ch.title.includes('Force')) {
+        topicNames = ["Newton's First Law", "Force & Acceleration (F=ma)", "Action & Reaction Pairs", "Kinetic & Potential Energy"];
+      } else if (ch.title.includes('Light')) {
+        topicNames = ['Snell Law of Refraction', 'Concave & Convex Lenses', 'Total Internal Reflection', 'Focal Length Calculations'];
+      } else if (ch.title.includes('Python')) {
+        topicNames = ['Variables & Data Types', 'Control Flow & Loops', 'Functions & Return Values', 'Lists & Dictionaries'];
+      } else if (ch.title.includes('Web')) {
+        topicNames = ['HTML5 Semantic Structure', 'CSS Box Model & Flexbox', 'Client-Server HTTP Request Model', 'JavaScript DOM Manipulation'];
+      } else {
+        topicNames = ['Fundamental Principles', 'Core Vocabulary & Definitions', 'Applied Exercises & Case Studies'];
+      }
+
+      topicNames.forEach((tName, idx) => {
+        const info = insertTopic.run(ch.id, tName, idx + 1, `Core syllabus topic for ${ch.title}`);
+        const tId = Number(info.lastInsertRowid);
+        // Vary statuses for realistic student profile
+        const status = idx === 0 ? 'strong' : (idx === 1 ? 'learning' : 'not_started');
+        insertProg.run(studentId, tId, status);
+      });
+    }
+  }
+
+  // 13. Exams (Exam Countdown)
+  const existingExams = (db.prepare('SELECT count(*) as c FROM exams WHERE user_id = ?').get(studentId) as { c: number }).c;
+  if (existingExams === 0) {
+    const today = new Date();
+    const d1 = new Date(today);
+    d1.setDate(d1.getDate() + 12);
+    const d2 = new Date(today);
+    d2.setDate(d2.getDate() + 24);
+
+    const insertExam = db.prepare('INSERT INTO exams (user_id, title, subject_id, exam_date, chapter_ids_json, priority, notes) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    insertExam.run(studentId, 'Mathematics Mid-Term Examination', mathSub.id, d1.toISOString().split('T')[0], JSON.stringify([1, 2]), 'high', 'Covers Fractions, Linear Equations, and Geometry.');
+    insertExam.run(studentId, 'Science Annual Board Exam', sciSub.id, d2.toISOString().split('T')[0], JSON.stringify([]), 'medium', 'Comprehensive test across Physics, Chemistry, and Biology.');
+  }
+
+  // 14. Homework Tracker
+  const existingHw = (db.prepare('SELECT count(*) as c FROM homework WHERE user_id = ?').get(studentId) as { c: number }).c;
+  if (existingHw === 0) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 4);
+    const nextWeekStr = nextWeek.toISOString().split('T')[0];
+
+    const insertHw = db.prepare('INSERT INTO homework (user_id, subject_id, title, description, due_date, priority, status) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    insertHw.run(studentId, mathSub.id, 'Algebra Exercise 4.2 Problems 1-10', 'Solve linear equations and check extraneous roots', tomorrowStr, 'high', 'in_progress');
+    insertHw.run(studentId, engSub.id, 'Literature Essay: Analysis of Tone in Ode to Autumn', '500-word written essay with textual citations', todayStr, 'high', 'not_started');
+    insertHw.run(studentId, sciSub.id, 'Photosynthesis Lab Observations Report', 'Diagram the chloroplast stroma and light reaction steps', nextWeekStr, 'medium', 'not_started');
+    insertHw.run(studentId, csSub.id, 'Python List Comprehensions Practice Set', 'Implement filter and map equivalents in Python', todayStr, 'low', 'completed');
+  }
+
+  // 15. Daily Challenges
+  const todayStr = new Date().toISOString().split('T')[0];
+  const existingChallenges = (db.prepare('SELECT count(*) as c FROM daily_challenges WHERE user_id = ? AND challenge_date = ?').get(studentId, todayStr) as { c: number }).c;
+  if (existingChallenges === 0) {
+    const insertChall = db.prepare('INSERT OR IGNORE INTO daily_challenges (user_id, challenge_date, challenge_type, title, description, target_count, current_count, is_completed, xp_awarded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    insertChall.run(studentId, todayStr, 'quiz_5', 'Quick Quiz Challenger', 'Complete 5 questions in any quiz or practice mode', 5, 0, 0, 50);
+    insertChall.run(studentId, todayStr, 'flashcards_10', 'Flashcard Master', 'Review 10 flashcards to strengthen memory retention', 10, 0, 0, 50);
+    insertChall.run(studentId, todayStr, 'focus_20', 'Deep Work Sprint', 'Complete at least 20 minutes of distraction-free Focus Mode', 20, 0, 0, 50);
+  }
+
   console.log('Seeding completed successfully!');
 }
 

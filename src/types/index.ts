@@ -212,3 +212,160 @@ export interface ReportItem {
   reporter_username?: string;
   reporter_email?: string;
 }
+
+export interface Topic {
+  id: number;
+  chapter_id: number;
+  title: string;
+  order_num: number;
+  description: string;
+  status?: 'not_started' | 'learning' | 'strong';
+}
+
+export interface ChapterWithTopics extends Chapter {
+  topics: Topic[];
+  totalTopics: number;
+  strongCount: number;
+  learningCount: number;
+  notStartedCount: number;
+  progressPercent: number;
+  needsAttention: boolean;
+}
+
+export interface Exam {
+  id: number;
+  user_id: number;
+  title: string;
+  subject_id: number;
+  subject_name?: string;
+  subject_color?: string;
+  exam_date: string;
+  chapter_ids_json?: string;
+  chapterIds: number[];
+  priority: 'low' | 'medium' | 'high';
+  notes?: string;
+  daysLeft: number;
+  countdownBadge: string;
+  created_at?: string;
+}
+
+export interface Homework {
+  id: number;
+  user_id: number;
+  subject_id?: number;
+  subject_name?: string;
+  subject_color?: string;
+  title: string;
+  description?: string;
+  due_date: string;
+  priority: 'low' | 'medium' | 'high';
+  status: 'not_started' | 'in_progress' | 'completed';
+  completed_at?: string;
+  isDueToday?: boolean;
+  isDueTomorrow?: boolean;
+  isOverdue?: boolean;
+  isUpcoming?: boolean;
+}
+
+export interface DailyChallenge {
+  id: number;
+  challenge_type: 'quiz_5' | 'flashcards_10' | 'focus_20' | 'review_weak';
+  title: string;
+  description: string;
+  target_count: number;
+  current_count: number;
+  is_completed: number;
+  xp_awarded: number;
+}
+
+export interface StudyPlanActivity {
+  id: number;
+  title: string;
+  subject: string;
+  durationMinutes: number;
+  type: 'exam_prep' | 'weak_topic' | 'lesson' | 'flashcard_review' | 'quiz' | 'custom';
+  status: 'pending' | 'completed' | 'skipped' | 'rescheduled';
+  reason?: string;
+}
+
+export interface StudyPlan {
+  planDate: string;
+  activities: StudyPlanActivity[];
+  totalCount: number;
+  completedCount: number;
+  totalMinutes: number;
+  completedMinutes: number;
+  progressPercent: number;
+}
+
+export interface WeakTopic {
+  topic: string;
+  subject: string;
+  chapter?: string;
+  reason: string;
+  recommendedActivity: string;
+  recommendedTimeMinutes: number;
+  severity: 'high' | 'medium' | 'low';
+}
+
+export interface ChatSession {
+  id: number;
+  title: string;
+  subject_id?: number;
+  subject_name?: string;
+  topic?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+export interface NotificationItem {
+  id: string;
+  type: 'exam' | 'homework' | 'flashcards' | 'goal';
+  title: string;
+  message: string;
+  date: string;
+}
+
+export interface AnalyticsOverview {
+  studySeconds: {
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+    total: number;
+  };
+  todayTargetMinutes: number;
+  quizMetrics: {
+    averageAccuracy: number;
+    totalQuizzes: number;
+  };
+  topicStrengths: {
+    strong: number;
+    learning: number;
+  };
+  tasksCompleted: number;
+  flashcardsReviewed: number;
+  streak: {
+    current: number;
+    longest: number;
+  };
+  xp: number;
+  level: number;
+}
+
+export interface UserSettings {
+  id: number;
+  username: string;
+  email: string;
+  grade: string;
+  learning_goals: string;
+  study_style: string;
+  daily_target_minutes: number;
+  notifications_enabled: number;
+}

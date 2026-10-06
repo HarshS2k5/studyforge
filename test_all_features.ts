@@ -279,6 +279,130 @@ async function runTests() {
   const adminReports = await fetch(`${BASE}/reports`, { headers: adminHeaders }).then(r => r.json());
   assert(adminReports.reports.length > 0, `Admin viewed ${adminReports.reports.length} curriculum reports`);
 
+  // 21. AI Chat Sessions
+  const newChatSession = await fetch(`${BASE}/tutor/sessions`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({ title: 'Math: Quadratic Equations', topic: 'Quadratic' }),
+  }).then(r => r.json());
+  assert(Boolean(newChatSession.session?.id), `Created AI chat session ID ${newChatSession.session?.id}`);
+
+  const sessionMsg = await fetch(`${BASE}/tutor/sessions/${newChatSession.session.id}/messages`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({ message: 'How do I use the quadratic formula?' }),
+  }).then(r => r.json());
+  assert(Boolean(sessionMsg.reply), 'AI session chat received Socratic reply');
+
+  // 22. Question Scanner
+  const scannedQ = await fetch(`${BASE}/tutor/scan-question`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({
+      imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      mimeType: 'image/png',
+      notes: 'Help with this equation',
+    }),
+  }).then(r => r.json());
+  assert(Boolean(scannedQ.questionText) && Boolean(scannedQ.stepByStepSolution), 'Question Scanner parsed image and generated step-by-step solution');
+
+  // 23. Chapters with Topics & Topic Progress
+  const chTopics = await fetch(`${BASE}/subjects/${mathSub.id}/chapters-with-topics`, { headers: studentHeaders }).then(r => r.json());
+  assert(chTopics.chapters.length > 0 && Array.isArray(chTopics.chapters[0].topics), 'Chapters with topics returned');
+
+  const firstTopic = chTopics.chapters[0].topics[0];
+  if (firstTopic) {
+    const topicProg = await fetch(`${BASE}/topics/${firstTopic.id}/progress`, {
+      method: 'PUT',
+      headers: studentHeaders,
+      body: JSON.stringify({ status: 'strong' }),
+    }).then(r => r.json());
+    assert(topicProg.status === 'strong' && topicProg.xpEarned === 15, 'Updated topic progress to strong with +15 XP');
+  }
+
+  // 24. Weak Topics Detector
+  const weakTopicsRes = await fetch(`${BASE}/analytics/weak-topics`, { headers: studentHeaders }).then(r => r.json());
+  assert(Array.isArray(weakTopicsRes.weakTopics), `Weak topic detector returned ${weakTopicsRes.weakTopics.length} areas to review`);
+
+  // 25. Smart Daily Study Plan
+  const dailyPlanRes = await fetch(`${BASE}/planner/daily-plan`, { headers: studentHeaders }).then(r => r.json());
+  assert(Array.isArray(dailyPlanRes.activities) && dailyPlanRes.totalCount > 0, `Smart daily plan generated with ${dailyPlanRes.totalCount} activities`);
+
+  // 26. Exams & Countdown
+  const createExamRes = await fetch(`${BASE}/exams`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({
+      subject_id: mathSub.id,
+      title: 'Final Term Math Exam',
+      exam_date: new Date(Date.now() + 20 * 86400000).toISOString().split('T')[0],
+      priority: 'high',
+      chapter_ids: [1, 2],
+    }),
+  }).then(r => r.json());
+  assert(Boolean(createExamRes.id), `Exam created with ID ${createExamRes.id}`);
+
+  const examsList = await fetch(`${BASE}/exams`, { headers: studentHeaders }).then(r => r.json());
+  assert(examsList.exams.length > 0 && examsList.exams[0].countdownBadge, `Exams list returned with countdown badge "${examsList.exams[0].countdownBadge}"`);
+
+  // 27. Homework Tracker
+  const createHwRes = await fetch(`${BASE}/homework`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({
+      subject_id: mathSub.id,
+      title: 'Math Worksheet 4.2',
+      due_date: new Date().toISOString().split('T')[0],
+      priority: 'high',
+      estimated_minutes: 25,
+    }),
+  }).then(r => r.json());
+  assert(Boolean(createHwRes.id), `Homework created with ID ${createHwRes.id}`);
+
+  const updateHw = await fetch(`${BASE}/homework/${createHwRes.id}`, {
+    method: 'PUT',
+    headers: studentHeaders,
+    body: JSON.stringify({ status: 'completed' }),
+  }).then(r => r.json());
+  assert(updateHw.xpEarned === 25, 'Completed homework item awarded +25 XP');
+
+  // 28. Daily Challenge
+  const challengesRes = await fetch(`${BASE}/daily-challenge`, { headers: studentHeaders }).then(r => r.json());
+  assert(challengesRes.challenges.length > 0, `Daily challenges returned (${challengesRes.challenges.length} active)`);
+
+  // 29. Smart Flashcards (AI & SM-2)
+  const aiCards = await fetch(`${BASE}/flashcards/generate-ai`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({ subject: 'Mathematics', topic: 'Fractions', count: 3 }),
+  }).then(r => r.json());
+  assert(Array.isArray(aiCards.cards) && aiCards.cards.length >= 2, `AI generated ${aiCards.cards?.length} flashcards`);
+
+  const reviewCardSm2 = await fetch(`${BASE}/flashcards/1/review`, {
+    method: 'POST',
+    headers: studentHeaders,
+    body: JSON.stringify({ rating: 'Good' }),
+  }).then(r => r.json());
+  assert(reviewCardSm2.newIntervalDays >= 2, `SM-2 review applied: new interval ${reviewCardSm2.newIntervalDays} days`);
+
+  // 30. Quiz History
+  const quizHistoryRes = await fetch(`${BASE}/quizzes/history`, { headers: studentHeaders }).then(r => r.json());
+  assert(Array.isArray(quizHistoryRes.attempts), 'Quiz history returns user attempts');
+
+  // 31. Advanced Analytics Overview
+  const analyticsRes = await fetch(`${BASE}/analytics/overview`, { headers: studentHeaders }).then(r => r.json());
+  assert(analyticsRes.studySeconds !== undefined && analyticsRes.streak !== undefined, 'Advanced analytics overview returns study windows and streak records');
+
+  // 32. Settings, Export, and Notifications
+  const settingsRes = await fetch(`${BASE}/settings`, { headers: studentHeaders }).then(r => r.json());
+  assert(settingsRes.settings.daily_target_minutes !== undefined, 'User settings retrieved');
+
+  const exportRes = await fetch(`${BASE}/settings/export`, { headers: studentHeaders }).then(r => r.json());
+  assert(exportRes.studyforge_export && exportRes.data?.user, 'User JSON data export successfully verified');
+
+  const notifsRes = await fetch(`${BASE}/notifications`, { headers: studentHeaders }).then(r => r.json());
+  assert(Array.isArray(notifsRes.notifications), `Notifications center returns ${notifsRes.notifications.length} notifications`);
+
   console.log(`\n========================================`);
   console.log(`🏆 TEST RESULTS: ${passed} Passed, ${failed} Failed`);
   console.log(`========================================\n`);

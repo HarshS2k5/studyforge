@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, BookOpen, Layers, FileText, HelpCircle, X, ArrowRight, Compass } from 'lucide-react';
+import { Search, BookOpen, Layers, FileText, HelpCircle, X, ArrowRight, Compass, Target } from 'lucide-react';
 import { api } from '../services/api';
 
 interface GlobalSearchModalProps {
@@ -13,6 +13,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
   const [results, setResults] = useState<{
     subjects: any[];
     chapters: any[];
+    topics: any[];
     lessons: any[];
     notes: any[];
     questions: any[];
@@ -20,6 +21,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
   }>({
     subjects: [],
     chapters: [],
+    topics: [],
     lessons: [],
     notes: [],
     questions: [],
@@ -33,13 +35,13 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
       setQuery('');
-      setResults({ subjects: [], chapters: [], lessons: [], notes: [], questions: [], flashcards: [] });
+      setResults({ subjects: [], chapters: [], topics: [], lessons: [], notes: [], questions: [], flashcards: [] });
     }
   }, [isOpen]);
 
   useEffect(() => {
     if (!query.trim()) {
-      setResults({ subjects: [], chapters: [], lessons: [], notes: [], questions: [], flashcards: [] });
+      setResults({ subjects: [], chapters: [], topics: [], lessons: [], notes: [], questions: [], flashcards: [] });
       return;
     }
 
@@ -63,6 +65,7 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
   const totalResults =
     results.subjects.length +
     results.chapters.length +
+    (results.topics?.length || 0) +
     results.lessons.length +
     results.notes.length +
     results.questions.length +
@@ -132,6 +135,37 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
                         {s.name}
                       </div>
                       <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1">{s.description}</div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Topics */}
+          {results.topics && results.topics.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 mb-2 flex items-center gap-1.5">
+                <Target className="w-3.5 h-3.5 text-indigo-500" /> Topics ({results.topics.length})
+              </div>
+              <div className="space-y-1">
+                {results.topics.map((t: any) => (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      onNavigate(`/chapters/${t.chapter_id}`);
+                      onClose();
+                    }}
+                    className="w-full text-left p-3 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between group transition-colors cursor-pointer"
+                  >
+                    <div>
+                      <div className="font-semibold text-sm text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                        {t.title}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1">
+                        {t.subject_name} • {t.chapter_title} {t.description ? `— ${t.description}` : ''}
+                      </div>
                     </div>
                     <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-1 transition-all" />
                   </button>

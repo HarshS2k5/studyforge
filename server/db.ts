@@ -283,7 +283,109 @@ export function initDatabase() {
       value TEXT,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS topics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chapter_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      order_num INTEGER DEFAULT 1,
+      description TEXT,
+      FOREIGN KEY (chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS user_topic_progress (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      topic_id INTEGER NOT NULL,
+      status TEXT DEFAULT 'not_started',
+      last_reviewed_at DATETIME,
+      UNIQUE(user_id, topic_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS exams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      subject_id INTEGER NOT NULL,
+      exam_date TEXT NOT NULL,
+      chapter_ids_json TEXT,
+      priority TEXT DEFAULT 'high',
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS homework (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      subject_id INTEGER,
+      title TEXT NOT NULL,
+      description TEXT,
+      due_date TEXT NOT NULL,
+      priority TEXT DEFAULT 'medium',
+      status TEXT DEFAULT 'not_started',
+      completed_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_chat_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      subject_id INTEGER,
+      topic TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (session_id) REFERENCES ai_chat_sessions(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS daily_challenges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      challenge_date TEXT NOT NULL,
+      challenge_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      target_count INTEGER NOT NULL,
+      current_count INTEGER DEFAULT 0,
+      is_completed INTEGER DEFAULT 0,
+      xp_awarded INTEGER DEFAULT 0,
+      UNIQUE(user_id, challenge_date, challenge_type),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS daily_study_plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      plan_date TEXT NOT NULL,
+      activities_json TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, plan_date),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
   `);
+
+  // Safe idempotent column additions
+  try { db.exec("ALTER TABLE users ADD COLUMN daily_target_minutes INTEGER DEFAULT 60;"); } catch {}
+  try { db.exec("ALTER TABLE users ADD COLUMN longest_streak INTEGER DEFAULT 1;"); } catch {}
+  try { db.exec("ALTER TABLE users ADD COLUMN notifications_enabled INTEGER DEFAULT 1;"); } catch {}
+  try { db.exec("ALTER TABLE notes ADD COLUMN tags_json TEXT DEFAULT '[]';"); } catch {}
+  try { db.exec("ALTER TABLE flashcards ADD COLUMN topic TEXT;"); } catch {}
 
   console.log('Database initialized successfully at', dbPath);
 

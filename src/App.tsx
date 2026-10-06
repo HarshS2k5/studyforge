@@ -32,6 +32,9 @@ import { BookmarksPage } from './pages/BookmarksPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { AboutPage } from './pages/AboutPage';
+import { SubjectDetailPage } from './pages/SubjectDetailPage';
+import { HomeworkPage } from './pages/HomeworkPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 export const App: React.FC = () => {
   const { user } = useAuth();
@@ -117,8 +120,7 @@ export const App: React.FC = () => {
 
     if (currentPath.startsWith('/subjects/')) {
       const subjectId = currentPath.split('/')[2];
-      // Subject detail / Chapter view
-      return <ChapterDetailPage chapterId={subjectId} onNavigate={navigate} />;
+      return <SubjectDetailPage subjectId={subjectId} onNavigate={navigate} />;
     }
 
     if (currentPath.startsWith('/chapters/')) {
@@ -147,6 +149,14 @@ export const App: React.FC = () => {
       );
     }
 
+    if (currentPath === '/homework') {
+      return <HomeworkPage onNavigate={navigate} />;
+    }
+
+    if (currentPath === '/settings') {
+      return <SettingsPage />;
+    }
+
     if (currentPath === '/quizzes') {
       const params = new URLSearchParams(window.location.search);
       return (
@@ -171,14 +181,14 @@ export const App: React.FC = () => {
     }
 
     if (currentPath === '/planner') {
-      return <PlannerPage />;
+      return <PlannerPage onNavigate={navigate} />;
     }
 
     if (currentPath === '/timer') {
       return <TimerPage />;
     }
 
-    if (currentPath === '/progress') {
+    if (currentPath === '/progress' || currentPath === '/analytics') {
       return <ProgressPage />;
     }
 

@@ -11,7 +11,7 @@ import {
   addXpAndCheckStreak,
   checkUserAchievements,
 } from './auth.js';
-import { askTutor, transformNote } from './tutorEngine.js';
+import { askTutor, transformNote, scanQuestion, generateFlashcardsAi } from './tutorEngine.js';
 
 const router = Router();
 
@@ -433,6 +433,16 @@ router.get('/chapters/:id', optionalAuth, (req: AuthRequest, res) => {
     const lessons = db.prepare('SELECT * FROM lessons WHERE chapter_id = ? ORDER BY order_num ASC').all(chapterId) as any[];
     const questionsCount = (db.prepare('SELECT count(*) as c FROM questions WHERE chapter_id = ?').get(chapterId) as any).c;
 
+    const topics = db.prepare('SELECT * FROM topics WHERE chapter_id = ? ORDER BY order_num ASC').all(chapterId) as any[];
+    const topicsWithProgress = topics.map(t => {
+      let status = 'not_started';
+      if (userId) {
+        const prog = db.prepare('SELECT status FROM user_topic_progress WHERE user_id = ? AND topic_id = ?').get(userId, t.id) as any;
+        if (prog) status = prog.status;
+      }
+      return { ...t, status };
+    });
+
     const enrichedLessons = lessons.map(les => {
       let completed = false;
       if (userId) {
@@ -442,7 +452,7 @@ router.get('/chapters/:id', optionalAuth, (req: AuthRequest, res) => {
       return { ...les, completed };
     });
 
-    res.json({ chapter, lessons: enrichedLessons, stats: { questionsCount } });
+    res.json({ chapter, lessons: enrichedLessons, topics: topicsWithProgress, stats: { questionsCount } });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Server error' });
   }
@@ -573,6 +583,122 @@ router.post('/tutor/transform-note', optionalAuth, async (req: AuthRequest, res)
   } catch (err: any) {
     console.error('Transform note error:', err);
     res.status(500).json({ error: err.message || 'Error processing notes' });
+  }
+});
+
+router.post('/tutor/scan-question', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const { imageBase64, mimeType, notes } = req.body;
+    if (!imageBase64) {
+      res.status(400).json({ error: 'Image data is required' });
+      return;
+    }
+    const result = await scanQuestion(imageBase64, mimeType || 'image/jpeg', notes);
+    res.json(result);
+  } catch (err: any) {
+    console.error('Scan question error:', err);
+    res.status(500).json({ error: err.message || 'Error processing question image' });
+  }
+});
+
+router.get('/tutor/sessions', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const sessions = db.prepare(`
+      SELECT s.id, s.title, s.subject_id, s.topic, s.created_at, s.updated_at,
+             sub.name as subject_name
+      FROM ai_chat_sessions s
+      LEFT JOIN subjects sub ON sub.id = s.subject_id
+      WHERE s.user_id = ?
+      ORDER BY s.updated_at DESC
+    `).all(userId);
+    res.json({ sessions });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.post('/tutor/sessions', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const { title, subject_id, topic } = req.body;
+    const info = db.prepare(`
+      INSERT INTO ai_chat_sessions (user_id, title, subject_id, topic, created_at, updated_at)
+      VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+    `).run(userId, title || 'New Study Session', subject_id || null, topic || null);
+
+    const session = db.prepare('SELECT * FROM ai_chat_sessions WHERE id = ?').get(info.lastInsertRowid);
+    res.json({ session });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.get('/tutor/sessions/:id', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const session = db.prepare('SELECT * FROM ai_chat_sessions WHERE id = ? AND user_id = ?').get(req.params.id, userId) as any;
+    if (!session) {
+      res.status(404).json({ error: 'Chat session not found' });
+      return;
+    }
+    const messages = db.prepare('SELECT id, role, content, created_at FROM ai_chat_messages WHERE session_id = ? ORDER BY id ASC').all(req.params.id);
+    res.json({ session, messages });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.post('/tutor/sessions/:id/messages', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const sessionId = req.params.id;
+    const { message, action } = req.body;
+
+    const session = db.prepare('SELECT * FROM ai_chat_sessions WHERE id = ? AND user_id = ?').get(sessionId, userId) as any;
+    if (!session) {
+      res.status(404).json({ error: 'Chat session not found' });
+      return;
+    }
+
+    db.prepare("INSERT INTO ai_chat_messages (session_id, role, content) VALUES (?, 'user', ?)").run(sessionId, message);
+
+    const prevMessages = db.prepare('SELECT role, content FROM ai_chat_messages WHERE session_id = ? ORDER BY id ASC LIMIT 20').all(sessionId) as any[];
+    const history = prevMessages.map(m => ({
+      role: (m.role === 'user' ? 'user' : 'model') as 'user' | 'model',
+      content: m.content,
+    }));
+
+    const subjectRow = session.subject_id ? db.prepare('SELECT name FROM subjects WHERE id = ?').get(session.subject_id) as any : null;
+    const studentUser = db.prepare('SELECT grade FROM users WHERE id = ?').get(userId) as any;
+
+    const tutorResponse = await askTutor({
+      message,
+      history,
+      grade: studentUser?.grade || 'Grade 10',
+      subject: subjectRow?.name || 'General Academics',
+      topic: session.topic || 'Core Concept',
+      action: action || 'chat',
+    });
+
+    db.prepare("INSERT INTO ai_chat_messages (session_id, role, content) VALUES (?, 'assistant', ?)").run(sessionId, tutorResponse.reply);
+    db.prepare("UPDATE ai_chat_sessions SET updated_at = datetime('now') WHERE id = ?").run(sessionId);
+
+    addXpAndCheckStreak(userId, 5);
+
+    res.json({ reply: tutorResponse.reply, suggestedFollowUps: tutorResponse.suggestedFollowUps });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.delete('/tutor/sessions/:id', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    db.prepare('DELETE FROM ai_chat_sessions WHERE id = ? AND user_id = ?').run(req.params.id, userId);
+    res.json({ message: 'Session deleted' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
   }
 });
 
@@ -743,23 +869,32 @@ router.post('/quizzes/submit', optionalAuth, (req: AuthRequest, res) => {
   }
 });
 
-router.get('/quizzes/history', authenticateToken, (req: AuthRequest, res) => {
+router.get('/quizzes/history', optionalAuth, (req: AuthRequest, res) => {
   try {
-    const userId = req.user!.id;
+    const userId = req.user?.id;
+    if (!userId) {
+      res.json({ history: [], attempts: [] });
+      return;
+    }
     const history = db.prepare(`
       SELECT qa.*, s.name as subject_name 
       FROM quiz_attempts qa 
       JOIN subjects s ON qa.subject_id = s.id 
       WHERE qa.user_id = ? 
       ORDER BY qa.completed_at DESC 
-      LIMIT 20
+      LIMIT 25
     `).all(userId) as any[];
 
+    const mapped = history.map(h => ({
+      ...h,
+      topics_to_improve: h.topics_to_improve_json ? JSON.parse(h.topics_to_improve_json) : [],
+      topicsToImprove: h.topics_to_improve_json ? JSON.parse(h.topics_to_improve_json) : [],
+      answers: h.answers_json ? JSON.parse(h.answers_json) : [],
+    }));
+
     res.json({
-      history: history.map(h => ({
-        ...h,
-        topics_to_improve: h.topics_to_improve_json ? JSON.parse(h.topics_to_improve_json) : [],
-      })),
+      history: mapped,
+      attempts: mapped,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Server error' });
@@ -1607,10 +1742,20 @@ router.get('/search', optionalAuth, (req: AuthRequest, res) => {
       LIMIT 5
     `).all(q, q);
 
+    const topics = db.prepare(`
+      SELECT t.id, t.title, t.description, c.id as chapter_id, c.title as chapter_title, s.name as subject_name 
+      FROM topics t 
+      JOIN chapters c ON t.chapter_id = c.id 
+      JOIN subjects s ON c.subject_id = s.id 
+      WHERE t.title LIKE ? OR t.description LIKE ? 
+      LIMIT 6
+    `).all(q, q);
+
     res.json({
       results: {
         subjects,
         chapters,
+        topics,
         lessons,
         notes,
         questions,
@@ -1821,4 +1966,846 @@ router.post('/admin/ai-config', requireAdmin, (req, res) => {
   }
 });
 
+// ==========================================
+// 19. TOPICS & CHAPTER MANAGEMENT
+// ==========================================
+router.get('/subjects/:id/chapters-with-topics', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const subjectId = req.params.id;
+    const userId = req.user?.id;
+
+    const chapters = db.prepare('SELECT id, title, order_num, description FROM chapters WHERE subject_id = ? ORDER BY order_num ASC').all(subjectId) as any[];
+
+    const enriched = chapters.map(ch => {
+      const topics = db.prepare('SELECT id, title, order_num, description FROM topics WHERE chapter_id = ? ORDER BY order_num ASC').all(ch.id) as any[];
+      let strongCount = 0;
+      let learningCount = 0;
+      let notStartedCount = 0;
+
+      const topicsWithProgress = topics.map(top => {
+        let status = 'not_started';
+        if (userId) {
+          const prog = db.prepare('SELECT status FROM user_topic_progress WHERE user_id = ? AND topic_id = ?').get(userId, top.id) as any;
+          if (prog?.status) status = prog.status;
+        }
+        if (status === 'strong') strongCount++;
+        else if (status === 'learning') learningCount++;
+        else notStartedCount++;
+
+        return { ...top, status };
+      });
+
+      const totalTopics = topics.length;
+      const progressPercent = totalTopics > 0 ? Math.round(((strongCount * 1.0 + learningCount * 0.5) / totalTopics) * 100) : 0;
+      const needsAttention = learningCount > 0 || (notStartedCount > 0 && strongCount === 0);
+
+      return {
+        ...ch,
+        topics: topicsWithProgress,
+        totalTopics,
+        strongCount,
+        learningCount,
+        notStartedCount,
+        progressPercent,
+        needsAttention,
+      };
+    });
+
+    res.json({ chapters: enriched });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.post('/chapters/:id/topics', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const chapterId = req.params.id;
+    const { title, description } = req.body;
+    if (!title) {
+      res.status(400).json({ error: 'Topic title is required' });
+      return;
+    }
+    const maxOrder = (db.prepare('SELECT MAX(order_num) as m FROM topics WHERE chapter_id = ?').get(chapterId) as any)?.m || 0;
+    const info = db.prepare('INSERT INTO topics (chapter_id, title, order_num, description) VALUES (?, ?, ?, ?)').run(chapterId, title.trim(), maxOrder + 1, description || '');
+    res.json({ message: 'Topic created', id: Number(info.lastInsertRowid) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.put('/topics/:id/progress', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const topicId = req.params.id;
+    const { status } = req.body;
+
+    if (!['not_started', 'learning', 'strong'].includes(status)) {
+      res.status(400).json({ error: 'Invalid status' });
+      return;
+    }
+
+    db.prepare(`
+      INSERT INTO user_topic_progress (user_id, topic_id, status, last_reviewed_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(user_id, topic_id) DO UPDATE SET status = excluded.status, last_reviewed_at = excluded.last_reviewed_at
+    `).run(userId, topicId, status);
+
+    let xpEarned = 0;
+    if (status === 'strong') {
+      addXpAndCheckStreak(userId, 15);
+      xpEarned = 15;
+    }
+
+    res.json({ message: 'Topic progress updated', status, xpEarned });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.post('/subjects/:id/chapters', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const subjectId = req.params.id;
+    const { title, description } = req.body;
+    if (!title) {
+      res.status(400).json({ error: 'Chapter title is required' });
+      return;
+    }
+    const maxOrder = (db.prepare('SELECT MAX(order_num) as m FROM chapters WHERE subject_id = ?').get(subjectId) as any)?.m || 0;
+    const info = db.prepare('INSERT INTO chapters (subject_id, title, order_num, description) VALUES (?, ?, ?, ?)').run(subjectId, title.trim(), maxOrder + 1, description || '');
+    res.json({ message: 'Chapter created', id: Number(info.lastInsertRowid) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// ==========================================
+// 20. WEAK TOPIC DETECTOR
+// ==========================================
+router.get('/analytics/weak-topics', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.json({ weakTopics: [] });
+      return;
+    }
+
+    const weakList: any[] = [];
+    const seenTopics = new Set<string>();
+
+    const mistakes = db.prepare(`
+      SELECT topic, subject_name, count(*) as err_count 
+      FROM mistake_book 
+      WHERE user_id = ? AND is_resolved = 0 
+      GROUP BY topic 
+      ORDER BY err_count DESC 
+      LIMIT 5
+    `).all(userId) as any[];
+
+    for (const m of mistakes) {
+      if (!m.topic || seenTopics.has(m.topic)) continue;
+      seenTopics.add(m.topic);
+      weakList.push({
+        topic: m.topic,
+        subject: m.subject_name || 'Mathematics',
+        reason: `${m.err_count} unresolved misconception${m.err_count > 1 ? 's' : ''} in Mistake Book`,
+        recommendedActivity: 'Review foundational concepts & complete a 5-question practice drill',
+        recommendedTimeMinutes: 20,
+        severity: 'high',
+      });
+    }
+
+    const learningTopics = db.prepare(`
+      SELECT t.id, t.title as topic, sub.name as subject, ch.title as chapter
+      FROM user_topic_progress utp
+      JOIN topics t ON t.id = utp.topic_id
+      JOIN chapters ch ON ch.id = t.chapter_id
+      JOIN subjects sub ON sub.id = ch.subject_id
+      WHERE utp.user_id = ? AND utp.status = 'learning'
+      LIMIT 4
+    `).all(userId) as any[];
+
+    for (const lt of learningTopics) {
+      if (seenTopics.has(lt.topic)) continue;
+      seenTopics.add(lt.topic);
+      weakList.push({
+        topic: lt.topic,
+        subject: lt.subject,
+        chapter: lt.chapter,
+        reason: 'Currently marked as "Learning" in progress manager',
+        recommendedActivity: 'Review chapter formulas and flip flashcards',
+        recommendedTimeMinutes: 15,
+        severity: 'medium',
+      });
+    }
+
+    if (weakList.length === 0) {
+      weakList.push({
+        topic: 'Proper & Improper Fractions',
+        subject: 'Mathematics',
+        reason: 'Recommended diagnostic check for Grade 10 mastery',
+        recommendedActivity: 'Take a quick 5-question check quiz',
+        recommendedTimeMinutes: 15,
+        severity: 'medium',
+      });
+    }
+
+    res.json({ weakTopics: weakList });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// ==========================================
+// 21. SMART DAILY STUDY PLAN
+// ==========================================
+router.get('/planner/daily-plan', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    let planRow = db.prepare('SELECT * FROM daily_study_plans WHERE user_id = ? AND plan_date = ?').get(userId, todayStr) as any;
+
+    if (!planRow) {
+      const activities: any[] = [];
+      let nextId = 1;
+
+      const upcomingExam = db.prepare(`
+        SELECT e.*, sub.name as subject_name 
+        FROM exams e 
+        JOIN subjects sub ON sub.id = e.subject_id 
+        WHERE e.user_id = ? AND e.exam_date >= date('now') 
+        ORDER BY e.exam_date ASC LIMIT 1
+      `).get(userId) as any;
+
+      if (upcomingExam) {
+        const examDate = new Date(upcomingExam.exam_date);
+        const daysLeft = Math.ceil((examDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+        activities.push({
+          id: nextId++,
+          title: `${upcomingExam.subject_name} — Exam Revision (${daysLeft}d left)`,
+          subject: upcomingExam.subject_name,
+          durationMinutes: 30,
+          type: 'exam_prep',
+          status: 'pending',
+          reason: `Exam: "${upcomingExam.title}" is in ${daysLeft} days`,
+        });
+      }
+
+      const mistake = db.prepare('SELECT topic, subject_name FROM mistake_book WHERE user_id = ? AND is_resolved = 0 LIMIT 1').get(userId) as any;
+      if (mistake) {
+        activities.push({
+          id: nextId++,
+          title: `${mistake.subject_name || 'Mathematics'} — ${mistake.topic || 'Fractions'} Practice`,
+          subject: mistake.subject_name || 'Mathematics',
+          durationMinutes: 25,
+          type: 'weak_topic',
+          status: 'pending',
+          reason: 'Identified as needing attention in Mistake Book',
+        });
+      } else {
+        activities.push({
+          id: nextId++,
+          title: 'Mathematics — Algebraic Expressions Drill',
+          subject: 'Mathematics',
+          durationMinutes: 25,
+          type: 'lesson',
+          status: 'pending',
+          reason: 'Daily core concept progression',
+        });
+      }
+
+      activities.push({
+        id: nextId++,
+        title: 'Daily Spaced Flashcard Review',
+        subject: 'All Subjects',
+        durationMinutes: 15,
+        type: 'flashcard_review',
+        status: 'pending',
+        reason: 'Reinforces long-term memory retrieval',
+      });
+
+      activities.push({
+        id: nextId++,
+        title: 'Science — Quick Diagnostic Quiz',
+        subject: 'Science',
+        durationMinutes: 20,
+        type: 'quiz',
+        status: 'pending',
+        reason: 'Test retention and verify understanding',
+      });
+
+      const actJson = JSON.stringify(activities);
+      db.prepare('INSERT INTO daily_study_plans (user_id, plan_date, activities_json) VALUES (?, ?, ?)').run(userId, todayStr, actJson);
+      planRow = { plan_date: todayStr, activities_json: actJson };
+    }
+
+    const activities = JSON.parse(planRow.activities_json || '[]');
+    const completedCount = activities.filter((a: any) => a.status === 'completed').length;
+    const totalMinutes = activities.reduce((acc: number, a: any) => acc + (a.durationMinutes || 0), 0);
+    const completedMinutes = activities.filter((a: any) => a.status === 'completed').reduce((acc: number, a: any) => acc + (a.durationMinutes || 0), 0);
+
+    res.json({
+      planDate: planRow.plan_date,
+      activities,
+      totalCount: activities.length,
+      completedCount,
+      totalMinutes,
+      completedMinutes,
+      progressPercent: activities.length > 0 ? Math.round((completedCount / activities.length) * 100) : 0,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.put('/planner/daily-plan/activity/:activityId', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const actId = Number(req.params.activityId);
+    const { status } = req.body;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const planRow = db.prepare('SELECT * FROM daily_study_plans WHERE user_id = ? AND plan_date = ?').get(userId, todayStr) as any;
+    if (!planRow) {
+      res.status(404).json({ error: 'No plan found for today' });
+      return;
+    }
+
+    const activities = JSON.parse(planRow.activities_json || '[]');
+    const target = activities.find((a: any) => a.id === actId);
+    if (!target) {
+      res.status(404).json({ error: 'Activity not found in plan' });
+      return;
+    }
+
+    target.status = status;
+    db.prepare('UPDATE daily_study_plans SET activities_json = ? WHERE user_id = ? AND plan_date = ?').run(JSON.stringify(activities), userId, todayStr);
+
+    let xpEarned = 0;
+    if (status === 'completed') {
+      addXpAndCheckStreak(userId, 25);
+      xpEarned = 25;
+    }
+
+    res.json({ message: 'Activity updated', status, xpEarned, activities });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.post('/planner/daily-plan/regenerate', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const todayStr = new Date().toISOString().split('T')[0];
+    db.prepare('DELETE FROM daily_study_plans WHERE user_id = ? AND plan_date = ?').run(userId, todayStr);
+    res.json({ message: 'Plan reset for regeneration' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// ==========================================
+// 22. EXAMS (EXAM COUNTDOWN)
+// ==========================================
+router.get('/exams', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.json({ exams: [] });
+      return;
+    }
+
+    const exams = db.prepare(`
+      SELECT e.*, sub.name as subject_name, sub.color as subject_color
+      FROM exams e
+      JOIN subjects sub ON sub.id = e.subject_id
+      WHERE e.user_id = ?
+      ORDER BY e.exam_date ASC
+    `).all(userId) as any[];
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const enriched = exams.map(e => {
+      const eDate = new Date(e.exam_date);
+      eDate.setHours(0, 0, 0, 0);
+      const diffTime = eDate.getTime() - today.getTime();
+      const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      let badge = `${daysLeft} DAYS LEFT`;
+      if (daysLeft === 0) badge = 'TODAY';
+      else if (daysLeft < 0) badge = 'COMPLETED';
+
+      return {
+        ...e,
+        daysLeft,
+        countdownBadge: badge,
+        chapterIds: JSON.parse(e.chapter_ids_json || '[]'),
+      };
+    });
+
+    res.json({ exams: enriched });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.post('/exams', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const { title, subject_id, exam_date, chapter_ids, priority, notes } = req.body;
+
+    if (!title || !subject_id || !exam_date) {
+      res.status(400).json({ error: 'Title, Subject, and Exam Date are required' });
+      return;
+    }
+
+    const info = db.prepare(`
+      INSERT INTO exams (user_id, title, subject_id, exam_date, chapter_ids_json, priority, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(userId, title.trim(), subject_id, exam_date, JSON.stringify(chapter_ids || []), priority || 'high', notes || '');
+
+    res.json({ message: 'Exam added', id: Number(info.lastInsertRowid) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.delete('/exams/:id', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    db.prepare('DELETE FROM exams WHERE id = ? AND user_id = ?').run(req.params.id, userId);
+    res.json({ message: 'Exam removed' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// ==========================================
+// 23. HOMEWORK TRACKER
+// ==========================================
+router.get('/homework', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.json({ homework: [] });
+      return;
+    }
+
+    const list = db.prepare(`
+      SELECT h.*, sub.name as subject_name, sub.color as subject_color
+      FROM homework h
+      LEFT JOIN subjects sub ON sub.id = h.subject_id
+      WHERE h.user_id = ?
+      ORDER BY 
+        CASE WHEN h.status = 'completed' THEN 1 ELSE 0 END,
+        h.due_date ASC
+    `).all(userId) as any[];
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+    const enriched = list.map(item => {
+      const isDueToday = item.due_date === todayStr && item.status !== 'completed';
+      const isDueTomorrow = item.due_date === tomorrowStr && item.status !== 'completed';
+      const isOverdue = item.due_date < todayStr && item.status !== 'completed';
+      const isUpcoming = item.due_date > tomorrowStr && item.status !== 'completed';
+
+      return {
+        ...item,
+        isDueToday,
+        isDueTomorrow,
+        isOverdue,
+        isUpcoming,
+      };
+    });
+
+    res.json({ homework: enriched });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.post('/homework', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const { title, subject_id, description, due_date, priority } = req.body;
+
+    if (!title || !due_date) {
+      res.status(400).json({ error: 'Title and Due Date are required' });
+      return;
+    }
+
+    const info = db.prepare(`
+      INSERT INTO homework (user_id, subject_id, title, description, due_date, priority, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'not_started')
+    `).run(userId, subject_id || null, title.trim(), description || '', due_date, priority || 'medium');
+
+    res.json({ message: 'Homework added', id: Number(info.lastInsertRowid) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.put('/homework/:id', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const { status, title, description, priority, due_date } = req.body;
+
+    const existing = db.prepare('SELECT status FROM homework WHERE id = ? AND user_id = ?').get(req.params.id, userId) as any;
+    if (!existing) {
+      res.status(404).json({ error: 'Homework not found' });
+      return;
+    }
+
+    db.prepare(`
+      UPDATE homework 
+      SET status = COALESCE(?, status),
+          title = COALESCE(?, title),
+          description = COALESCE(?, description),
+          priority = COALESCE(?, priority),
+          due_date = COALESCE(?, due_date),
+          completed_at = CASE WHEN ? = 'completed' THEN datetime('now') ELSE completed_at END
+      WHERE id = ? AND user_id = ?
+    `).run(status, title, description, priority, due_date, status, req.params.id, userId);
+
+    let xpEarned = 0;
+    if (status === 'completed' && existing.status !== 'completed') {
+      addXpAndCheckStreak(userId, 25);
+      xpEarned = 25;
+    }
+
+    res.json({ message: 'Homework updated', xpEarned });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.delete('/homework/:id', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    db.prepare('DELETE FROM homework WHERE id = ? AND user_id = ?').run(req.params.id, userId);
+    res.json({ message: 'Homework removed' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// ==========================================
+// 24. DAILY CHALLENGE
+// ==========================================
+router.get('/daily-challenge', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    if (!userId) {
+      res.json({
+        challenges: [
+          { challenge_type: 'quiz_5', title: 'Quick Quiz Challenger', description: 'Complete 5 questions in any quiz', target_count: 5, current_count: 0, is_completed: 0, xp_awarded: 50 },
+          { challenge_type: 'flashcards_10', title: 'Flashcard Master', description: 'Review 10 flashcards', target_count: 10, current_count: 0, is_completed: 0, xp_awarded: 50 },
+        ],
+      });
+      return;
+    }
+
+    let challenges = db.prepare('SELECT * FROM daily_challenges WHERE user_id = ? AND challenge_date = ?').all(userId, todayStr) as any[];
+
+    if (challenges.length === 0) {
+      const ins = db.prepare('INSERT OR IGNORE INTO daily_challenges (user_id, challenge_date, challenge_type, title, description, target_count, current_count, is_completed, xp_awarded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      ins.run(userId, todayStr, 'quiz_5', 'Quick Quiz Challenger', 'Complete 5 questions in any quiz or practice session', 5, 0, 0, 50);
+      ins.run(userId, todayStr, 'flashcards_10', 'Flashcard Master', 'Review 10 flashcards for retention', 10, 0, 0, 50);
+      ins.run(userId, todayStr, 'focus_20', 'Deep Work Sprint', 'Complete at least 20 minutes in Focus Mode', 20, 0, 0, 50);
+      challenges = db.prepare('SELECT * FROM daily_challenges WHERE user_id = ? AND challenge_date = ?').all(userId, todayStr) as any[];
+    }
+
+    res.json({ challenges });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.post('/daily-challenge/claim', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const { challenge_id } = req.body;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const ch = db.prepare('SELECT * FROM daily_challenges WHERE id = ? AND user_id = ? AND challenge_date = ?').get(challenge_id, userId, todayStr) as any;
+    if (!ch) {
+      res.status(404).json({ error: 'Challenge not found' });
+      return;
+    }
+
+    if (ch.is_completed) {
+      res.status(400).json({ error: 'Challenge reward already claimed today' });
+      return;
+    }
+
+    db.prepare('UPDATE daily_challenges SET is_completed = 1, current_count = target_count WHERE id = ?').run(challenge_id);
+    addXpAndCheckStreak(userId, ch.xp_awarded || 50);
+
+    res.json({ message: 'Daily challenge reward claimed!', xpEarned: ch.xp_awarded || 50 });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// ==========================================
+// 25. FLASHCARDS AI & SM-2 4-BUTTON REVIEW
+// ==========================================
+router.post('/flashcards/generate-ai', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const { subject, topic, deck_id, count } = req.body;
+    if (!subject || !topic) {
+      res.status(400).json({ error: 'Subject and Topic are required' });
+      return;
+    }
+
+    const cards = await generateFlashcardsAi(subject, topic, Number(count) || 5);
+
+    if (deck_id) {
+      const ins = db.prepare("INSERT INTO flashcards (deck_id, front, back, difficulty, topic, next_review_date) VALUES (?, ?, ?, ?, ?, date('now'))");
+      for (const c of cards) {
+        ins.run(deck_id, c.front, c.back, 'medium', topic);
+      }
+    }
+
+    res.json({ cards, message: `Generated ${cards.length} flashcards` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.post('/flashcards/:id/review', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const cardId = req.params.id;
+    const { rating } = req.body;
+    const userId = req.user?.id;
+
+    const card = db.prepare('SELECT repetitions, interval_days FROM flashcards WHERE id = ?').get(cardId) as any;
+    if (!card) {
+      res.status(404).json({ error: 'Flashcard not found' });
+      return;
+    }
+
+    let interval = card.interval_days || 1;
+    let reps = card.repetitions || 0;
+
+    if (rating === 'Again') {
+      interval = 1;
+      reps = 0;
+    } else if (rating === 'Hard') {
+      interval = Math.max(1, Math.round(interval * 1.2));
+      reps += 1;
+    } else if (rating === 'Good') {
+      interval = Math.max(3, Math.round(interval * 2.0));
+      reps += 1;
+    } else if (rating === 'Easy') {
+      interval = Math.max(5, Math.round(interval * 2.5));
+      reps += 1;
+    }
+
+    db.prepare(`
+      UPDATE flashcards 
+      SET repetitions = ?,
+          interval_days = ?,
+          next_review_date = date('now', '+' || ? || ' days'),
+          last_reviewed_at = datetime('now')
+      WHERE id = ?
+    `).run(reps, interval, interval, cardId);
+
+    if (userId) {
+      addXpAndCheckStreak(userId, 5);
+    }
+
+    res.json({
+      message: 'Card reviewed',
+      rating,
+      newIntervalDays: interval,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// ==========================================
+// 27. ADVANCED ANALYTICS OVERVIEW
+// ==========================================
+router.get('/analytics/overview', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.json({ stats: null });
+      return;
+    }
+
+    const user = db.prepare('SELECT xp, level, streak, longest_streak, total_study_seconds, daily_target_minutes FROM users WHERE id = ?').get(userId) as any;
+
+    const todaySeconds = (db.prepare("SELECT COALESCE(SUM(duration_seconds), 0) as s FROM study_sessions WHERE user_id = ? AND date(created_at) = date('now')").get(userId) as any).s;
+    const weekSeconds = (db.prepare("SELECT COALESCE(SUM(duration_seconds), 0) as s FROM study_sessions WHERE user_id = ? AND created_at >= datetime('now', '-7 days')").get(userId) as any).s;
+    const monthSeconds = (db.prepare("SELECT COALESCE(SUM(duration_seconds), 0) as s FROM study_sessions WHERE user_id = ? AND created_at >= datetime('now', '-30 days')").get(userId) as any).s;
+
+    const quizAccuracyAvg = (db.prepare("SELECT COALESCE(AVG(accuracy), 0) as a FROM quiz_attempts WHERE user_id = ?").get(userId) as any).a;
+    const totalQuizzes = (db.prepare("SELECT count(*) as c FROM quiz_attempts WHERE user_id = ?").get(userId) as any).c;
+    const totalHomeworkDone = (db.prepare("SELECT count(*) as c FROM homework WHERE user_id = ? AND status = 'completed'").get(userId) as any).c;
+    const totalFlashcardsReviewed = (db.prepare("SELECT COALESCE(SUM(repetitions), 0) as c FROM flashcards").get() as any).c;
+
+    const strongTopics = (db.prepare("SELECT count(*) as c FROM user_topic_progress WHERE user_id = ? AND status = 'strong'").get(userId) as any).c;
+    const learningTopics = (db.prepare("SELECT count(*) as c FROM user_topic_progress WHERE user_id = ? AND status = 'learning'").get(userId) as any).c;
+
+    res.json({
+      studySeconds: {
+        today: todaySeconds,
+        thisWeek: weekSeconds,
+        thisMonth: monthSeconds,
+        total: user?.total_study_seconds || 0,
+      },
+      todayTargetMinutes: user?.daily_target_minutes || 60,
+      quizMetrics: {
+        averageAccuracy: Math.round(quizAccuracyAvg),
+        totalQuizzes,
+      },
+      topicStrengths: {
+        strong: strongTopics,
+        learning: learningTopics,
+      },
+      tasksCompleted: totalHomeworkDone,
+      flashcardsReviewed: totalFlashcardsReviewed,
+      streak: {
+        current: user?.streak || 1,
+        longest: Math.max(user?.longest_streak || 1, user?.streak || 1),
+      },
+      xp: user?.xp || 0,
+      level: user?.level || 1,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// ==========================================
+// 28. SETTINGS & DATA EXPORT
+// ==========================================
+router.get('/settings', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const user = db.prepare('SELECT id, username, email, grade, learning_goals, study_style, daily_target_minutes, notifications_enabled FROM users WHERE id = ?').get(userId);
+    res.json({ settings: user });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.put('/settings', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const { grade, learning_goals, study_style, daily_target_minutes, notifications_enabled, username } = req.body;
+
+    db.prepare(`
+      UPDATE users 
+      SET grade = COALESCE(?, grade),
+          learning_goals = COALESCE(?, learning_goals),
+          study_style = COALESCE(?, study_style),
+          daily_target_minutes = COALESCE(?, daily_target_minutes),
+          notifications_enabled = COALESCE(?, notifications_enabled),
+          username = COALESCE(?, username)
+      WHERE id = ?
+    `).run(grade, learning_goals, study_style, daily_target_minutes, notifications_enabled !== undefined ? (notifications_enabled ? 1 : 0) : null, username, userId);
+
+    res.json({ message: 'Settings saved' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.get('/settings/export', authenticateToken, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const user = db.prepare('SELECT id, username, email, grade, xp, level, streak, created_at FROM users WHERE id = ?').get(userId);
+    const notes = db.prepare('SELECT * FROM notes WHERE user_id = ?').all(userId);
+    const mistakeBook = db.prepare('SELECT * FROM mistake_book WHERE user_id = ?').all(userId);
+    const quizHistory = db.prepare('SELECT * FROM quiz_attempts WHERE user_id = ?').all(userId);
+    const exams = db.prepare('SELECT * FROM exams WHERE user_id = ?').all(userId);
+    const homework = db.prepare('SELECT * FROM homework WHERE user_id = ?').all(userId);
+
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      user,
+      notes,
+      mistakeBook,
+      quizHistory,
+      exams,
+      homework,
+    };
+
+    res.json({
+      studyforge_export: true,
+      exportedAt: exportData.exportedAt,
+      data: exportData,
+      ...exportData,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// ==========================================
+// 29. DYNAMIC NOTIFICATIONS
+// ==========================================
+router.get('/notifications', optionalAuth, (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.json({ notifications: [], unreadCount: 0 });
+      return;
+    }
+
+    const notifications: any[] = [];
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const exams = db.prepare("SELECT title, exam_date FROM exams WHERE user_id = ? AND exam_date >= date('now') ORDER BY exam_date ASC LIMIT 2").all(userId) as any[];
+    for (const e of exams) {
+      const days = Math.ceil((new Date(e.exam_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+      notifications.push({
+        id: `exam-${e.title}`,
+        type: 'exam',
+        title: `Exam in ${days} day${days === 1 ? '' : 's'}!`,
+        message: `${e.title} is coming up on ${e.exam_date}. Stay consistent with your daily study plan.`,
+        date: e.exam_date,
+      });
+    }
+
+    const hwDue = db.prepare("SELECT title, due_date FROM homework WHERE user_id = ? AND due_date <= date('now', '+1 day') AND status != 'completed' LIMIT 2").all(userId) as any[];
+    for (const h of hwDue) {
+      notifications.push({
+        id: `hw-${h.title}`,
+        type: 'homework',
+        title: h.due_date === todayStr ? 'Homework Due Today' : 'Homework Due Tomorrow',
+        message: h.title,
+        date: h.due_date,
+      });
+    }
+
+    const cardsDueCount = (db.prepare("SELECT count(*) as c FROM flashcards WHERE next_review_date <= date('now')").get() as any).c;
+    if (cardsDueCount > 0) {
+      notifications.push({
+        id: 'flashcards-due',
+        type: 'flashcards',
+        title: 'Flashcards Ready for Review',
+        message: `You have ${cardsDueCount} card${cardsDueCount === 1 ? '' : 's'} due for spaced-repetition review today.`,
+        date: todayStr,
+      });
+    }
+
+    res.json({ notifications, unreadCount: notifications.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
 export default router;
+
+

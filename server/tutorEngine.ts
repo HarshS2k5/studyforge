@@ -405,3 +405,179 @@ True or False: Reviewing mistakes immediately after solving problems increases l
 *Disclaimer: Customized checklist generated for StudyForge.*`;
   return { result: checklist, tool, isAiGenerated: true };
 }
+
+// Question Scanner (OCR & Multimodal Explanation)
+export async function scanQuestion(
+  imageBase64: string,
+  mimeType: string = 'image/jpeg',
+  notes?: string
+): Promise<{
+  questionText: string;
+  subject: string;
+  topic: string;
+  stepByStepSolution: string;
+  similarPracticeQuestions: Array<{
+    question: string;
+    options: string[];
+    answer: string;
+    explanation: string;
+  }>;
+  commonPitfalls: string;
+  isAiGenerated: boolean;
+}> {
+  const apiKey = getGeminiApiKey();
+
+  if (apiKey) {
+    try {
+      const client = new GoogleGenAI({ apiKey });
+      const prompt = `You are StudyForge AI Academic Tutor. Analyze this photo of a student question/homework problem.
+Additional Student Notes: ${notes || 'None provided'}.
+
+Instructions:
+1. Transcribe the question clearly (use KaTeX notation like $x^2 + 5x + 6 = 0$ for math/science).
+2. Identify the subject (e.g. Mathematics, Science, English, etc.) and specific topic.
+3. Break down the full step-by-step solution, emphasizing the underlying reasoning so the student learns how to solve similar problems.
+4. Create 2 similar practice questions for the student with 4 multiple choice options, the correct answer, and an explanation.
+5. Provide a tip on common mistakes to watch out for.
+
+Return valid JSON with the schema:
+{
+  "questionText": "string",
+  "subject": "string",
+  "topic": "string",
+  "stepByStepSolution": "string",
+  "similarPracticeQuestions": [
+    { "question": "string", "options": ["A", "B", "C", "D"], "answer": "string", "explanation": "string" }
+  ],
+  "commonPitfalls": "string"
+}`;
+
+      const res = await client.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType: mimeType || 'image/jpeg',
+                  data: imageBase64.replace(/^data:image\/[a-zA-Z0-9+]+;base64,/, ''),
+                },
+              },
+              { text: prompt },
+            ],
+          },
+        ],
+      });
+
+      const text = res.text || '';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          questionText: parsed.questionText || 'Question extracted from photo',
+          subject: parsed.subject || 'Academics',
+          topic: parsed.topic || 'General Practice',
+          stepByStepSolution: parsed.stepByStepSolution || text,
+          similarPracticeQuestions: Array.isArray(parsed.similarPracticeQuestions) ? parsed.similarPracticeQuestions : [],
+          commonPitfalls: parsed.commonPitfalls || 'Double check units and intermediate calculations.',
+          isAiGenerated: true,
+        };
+      }
+    } catch (err) {
+      console.warn('Gemini vision API error, falling back to pedagogical engine:', err);
+    }
+  }
+
+  // Pedagogical fallback for local zero-dependency testing
+  return {
+    questionText: notes ? `Question from uploaded image (Notes: ${notes})` : 'Sample Scanned Problem: Calculate the result and show step-by-step reasoning.',
+    subject: notes?.toLowerCase().includes('fraction') ? 'Mathematics' : 'Science',
+    topic: 'Core Applied Problem',
+    stepByStepSolution: `### 📋 Step-by-Step Solution Breakdown
+1. **Identify Given Information**: Clarify known variables, constants, and what is specifically being asked.
+2. **Select Governing Formula**: Match the scenario with the appropriate physical law or mathematical identity.
+3. **Isolate Unknown Variable**: Perform algebraic operations systematically before substituting values.
+4. **Compute and Verify Units**: Calculate intermediate results carefully and verify that dimensional units match on both sides.
+5. **Sanity Check**: Does the order of magnitude of your final answer feel physically realistic?`,
+    similarPracticeQuestions: [
+      {
+        question: 'Which of the following represents the correct first step when simplifying this expression?',
+        options: ['Combine unlike terms immediately', 'Find a common factor or denominator', 'Multiply through by zero', 'Round off all terms'],
+        answer: 'Find a common factor or denominator',
+        explanation: 'Balancing factors or denominators must always precede combining fractional expressions.',
+      },
+      {
+        question: 'True or False: Verifying your final answer by re-substituting it into the original problem is recommended on exams.',
+        options: ['True', 'False', 'Only for Calculus', 'Never'],
+        answer: 'True',
+        explanation: 'Direct substitution verifies that no algebraic or sign slips were made during manipulation.',
+      },
+    ],
+    commonPitfalls: 'Forgetting to distribute negative signs across parentheses or dropping fractional denominators.',
+    isAiGenerated: false,
+  };
+}
+
+// Generate Flashcards with AI
+export async function generateFlashcardsAi(
+  subject: string,
+  topic: string,
+  count: number = 6
+): Promise<Array<{ front: string; back: string }>> {
+  const apiKey = getGeminiApiKey();
+
+  if (apiKey) {
+    try {
+      const client = new GoogleGenAI({ apiKey });
+      const prompt = `Generate ${count} high-yield study flashcards for:
+Subject: ${subject}
+Topic: ${topic}
+
+Requirements:
+- Front: A clear, conceptual question or term definition prompt.
+- Back: Concise, memorable explanation, formula, or key takeaway.
+Return JSON array format:
+[
+  { "front": "...", "back": "..." }
+]`;
+
+      const res = await client.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      });
+
+      const text = res.text || '';
+      const match = text.match(/\[[\s\S]*\]/);
+      if (match) {
+        return JSON.parse(match[0]);
+      }
+    } catch (e) {
+      console.warn('Gemini flashcard generation error, falling back:', e);
+    }
+  }
+
+  // Fallback curriculum cards
+  return [
+    {
+      front: `What is the core definition of ${topic} in ${subject}?`,
+      back: `The fundamental academic concept that governs interactions and problem-solving in ${subject}.`,
+    },
+    {
+      front: `What primary formula or rule applies to ${topic}?`,
+      back: `Identify governing relationships, maintain balance across equality, and verify correct units.`,
+    },
+    {
+      front: `What is the most frequent misconception students have regarding ${topic}?`,
+      back: `Skipping foundational steps or confusing inverse relationships with direct proportions.`,
+    },
+    {
+      front: `How can you verify that your solution for a ${topic} problem is accurate?`,
+      back: `Substitute your calculated values back into original constraints or use dimensional analysis.`,
+    },
+    {
+      front: `What is a real-world application of ${topic}?`,
+      back: `Applied engineering, data reasoning, and analytical modeling in science and industry.`,
+    },
+  ];
+}

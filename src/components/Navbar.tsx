@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   Search,
@@ -15,9 +15,18 @@ import {
   Layers,
   Award,
   HelpCircle,
+  Bell,
+  CheckSquare,
+  Settings as SettingsIcon,
+  Clock,
+  Calendar,
+  AlertCircle,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { api } from '../services/api';
+import { NotificationItem } from '../types';
 
 interface NavbarProps {
   onOpenSearch: () => void;
@@ -37,12 +46,34 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Notifications State
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (user) {
+      loadNotifications();
+    }
+  }, [user]);
+
+  const loadNotifications = async () => {
+    try {
+      const res = await api.getNotifications();
+      setNotifications(res.notifications || []);
+      setUnreadCount(res.unreadCount || 0);
+    } catch (err) {
+      console.error('Failed to load notifications', err);
+    }
+  };
 
   const navLinks = [
     { label: 'Dashboard', path: '/dashboard' },
     { label: 'Subjects', path: '/subjects' },
     { label: 'AI Tutor', path: '/tutor' },
+    { label: 'Homework', path: '/homework' },
     { label: 'Practice', path: '/practice' },
     { label: 'Quizzes', path: '/quizzes' },
     { label: 'Flashcards', path: '/flashcards' },
@@ -87,7 +118,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 key={link.path}
                 onClick={() => onNavigate(link.path)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   isActive
                     ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/60 dark:hover:bg-slate-800/60'
@@ -99,7 +130,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           })}
         </nav>
 
-        {/* Right: Search, Streak, XP, Theme, User */}
+        {/* Right: Search, Streak, XP, Notifications, Theme, User */}
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Global Search Button */}
           <button
@@ -107,7 +138,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="flex items-center gap-2 py-1.5 px-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 hover:border-indigo-300 dark:hover:border-indigo-700 text-xs transition-all cursor-pointer"
           >
             <Search className="w-3.5 h-3.5 text-slate-400" />
-            <span className="hidden sm:inline">Search curriculum...</span>
+            <span className="hidden sm:inline">Search...</span>
             <kbd className="hidden sm:inline text-[10px] font-mono border border-slate-300 dark:border-slate-700 px-1.5 py-0.2 rounded bg-white dark:bg-slate-900 text-slate-500">
               Ctrl+K
             </kbd>
@@ -138,6 +169,70 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
+          {/* Notifications Center Bell (Section #18) */}
+          {user && (
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setNotificationsOpen(!notificationsOpen);
+                  setUserDropdownOpen(false);
+                }}
+                className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative cursor-pointer"
+                title="Notifications"
+              >
+                <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                )}
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-rose-500" />
+                )}
+              </button>
+
+              {notificationsOpen && (
+                <div
+                  className="absolute right-0 mt-2 w-80 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl py-2 z-50 text-xs animate-scale-in"
+                  onClick={() => setNotificationsOpen(false)}
+                >
+                  <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <span className="font-bold text-slate-900 dark:text-white">Notifications</span>
+                    <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400">
+                      {notifications.length} Updates
+                    </span>
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                    {notifications.length === 0 ? (
+                      <div className="p-6 text-center text-slate-400 text-xs">
+                        All clear! No pending notifications.
+                      </div>
+                    ) : (
+                      notifications.map(n => (
+                        <div
+                          key={n.id}
+                          onClick={() => {
+                            if (n.link_path) onNavigate(n.link_path);
+                          }}
+                          className="p-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors space-y-1"
+                        >
+                          <div className="font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                            <span>{n.title}</span>
+                            <span className="text-[9px] text-slate-400 uppercase font-mono">
+                              {n.type}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                            {n.message}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
@@ -151,7 +246,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {user ? (
             <div className="relative">
               <button
-                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                onClick={() => {
+                  setUserDropdownOpen(!userDropdownOpen);
+                  setNotificationsOpen(false);
+                }}
                 className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">
@@ -176,7 +274,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                     onClick={() => onNavigate('/profile')}
                     className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center gap-2 text-slate-700 dark:text-slate-300 cursor-pointer"
                   >
-                    <UserIcon className="w-4 h-4 text-slate-400" /> Profile & Goals
+                    <UserIcon className="w-4 h-4 text-slate-400" /> Profile & Overview
+                  </button>
+
+                  <button
+                    onClick={() => onNavigate('/homework')}
+                    className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center gap-2 text-slate-700 dark:text-slate-300 cursor-pointer"
+                  >
+                    <CheckSquare className="w-4 h-4 text-slate-400" /> Homework Tracker
+                  </button>
+
+                  <button
+                    onClick={() => onNavigate('/settings')}
+                    className="w-full text-left px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center gap-2 text-slate-700 dark:text-slate-300 cursor-pointer"
+                  >
+                    <SettingsIcon className="w-4 h-4 text-slate-400" /> Settings & Export
                   </button>
 
                   <button
@@ -271,12 +383,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <button
               onClick={() => {
-                onNavigate('/exam');
+                onNavigate('/settings');
                 setMobileMenuOpen(false);
               }}
               className="px-3 py-2 text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5"
             >
-              <Layers className="w-4 h-4" /> Exam Simulation Mode
+              <SettingsIcon className="w-4 h-4" /> Settings & Export
             </button>
             <button
               onClick={() => {

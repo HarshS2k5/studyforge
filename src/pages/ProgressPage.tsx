@@ -11,20 +11,29 @@ import {
   TrendingUp,
   Sparkles,
   Calendar,
+  CheckCircle2,
+  AlertTriangle,
+  Zap,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { AnalyticsOverview } from '../types';
 
 export const ProgressPage: React.FC = () => {
   const { user } = useAuth();
   const [data, setData] = useState<any | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsOverview | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadProgress() {
       try {
-        const res = await api.getProgressSummary();
-        setData(res);
+        const [progressRes, analyticsRes] = await Promise.allSettled([
+          api.getProgressSummary(),
+          api.getAnalyticsOverview(),
+        ]);
+        if (progressRes.status === 'fulfilled') setData(progressRes.value);
+        if (analyticsRes.status === 'fulfilled') setAnalytics(analyticsRes.value);
       } catch (e) {
         console.error('Failed to load progress summary:', e);
       } finally {
@@ -38,10 +47,22 @@ export const ProgressPage: React.FC = () => {
     return <div className="py-24 text-center text-sm text-slate-500">Loading progress analytics...</div>;
   }
 
-  const streak = data?.streak || user?.streak || 5;
-  const xp = data?.xp || user?.xp || 420;
-  const level = data?.level || user?.level || 4;
+  const streak = analytics?.streak?.current || data?.streak || user?.streak || 5;
+  const longestStreak = analytics?.streak?.longest || streak;
+  const xp = analytics?.xp || data?.xp || user?.xp || 420;
+  const level = analytics?.level || data?.level || user?.level || 4;
   const levelInfo = user?.levelInfo;
+
+  // Study times from analytics or fallback
+  const todayMins = analytics?.studySeconds ? Math.round(analytics.studySeconds.today / 60) : 45;
+  const thisWeekHours = analytics?.studySeconds ? (analytics.studySeconds.thisWeek / 3600).toFixed(1) : '3.5';
+  const thisMonthHours = analytics?.studySeconds ? (analytics.studySeconds.thisMonth / 3600).toFixed(1) : '14.2';
+
+  const strongTopics = analytics?.topicStrengths?.strong || 8;
+  const learningTopics = analytics?.topicStrengths?.learning || 4;
+  const tasksCompleted = analytics?.tasksCompleted || 12;
+  const flashcardsReviewed = analytics?.flashcardsReviewed || data?.flashcardsReviewed || 18;
+  const accuracy = analytics?.quizMetrics?.averageAccuracy || user?.stats?.quizAccuracy || 80;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
@@ -55,70 +76,100 @@ export const ProgressPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Primary KPI Grid (Section #16 metrics) */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {/* Total Study Time */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
-            <Clock className="w-3.5 h-3.5 text-blue-500" /> Total Time
+      {/* 1. STUDY TIME WINDOWS: Today, This Week, This Month (Section #14) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Today's Focus</div>
+            <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+              {todayMins} <span className="text-xs font-semibold text-slate-400">minutes</span>
+            </div>
           </div>
-          <div className="text-xl font-extrabold text-slate-900 dark:text-white">
-            {data?.totalStudyHours || 1.5} <span className="text-xs font-normal text-slate-400">hrs</span>
-          </div>
-        </div>
-
-        {/* Quiz Accuracy */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
-            <Target className="w-3.5 h-3.5 text-emerald-500" /> Accuracy
-          </div>
-          <div className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400">
-            {user?.stats?.quizAccuracy || 80}%
+          <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 flex items-center justify-center">
+            <Clock className="w-5 h-5" />
           </div>
         </div>
 
-        {/* Questions Answered */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
-            <TrendingUp className="w-3.5 h-3.5 text-purple-500" /> Questions
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">This Week</div>
+            <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+              {thisWeekHours} <span className="text-xs font-semibold text-slate-400">hours</span>
+            </div>
           </div>
-          <div className="text-xl font-extrabold text-slate-900 dark:text-white">
-            {data?.totalQuestionsAnswered || 15}
-          </div>
-        </div>
-
-        {/* Chapters Completed */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
-            <BookOpen className="w-3.5 h-3.5 text-indigo-500" /> Chapters
-          </div>
-          <div className="text-xl font-extrabold text-slate-900 dark:text-white">
-            {data?.chaptersCompleted || 1}
+          <div className="w-10 h-10 rounded-2xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 flex items-center justify-center">
+            <Calendar className="w-5 h-5" />
           </div>
         </div>
 
-        {/* Flashcards Reviewed */}
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
-            <Layers className="w-3.5 h-3.5 text-amber-500" /> Flashcards
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">This Month</div>
+            <div className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+              {thisMonthHours} <span className="text-xs font-semibold text-slate-400">hours</span>
+            </div>
           </div>
-          <div className="text-xl font-extrabold text-slate-900 dark:text-white">
-            {data?.flashcardsReviewed || 8}
-          </div>
-        </div>
-
-        {/* Current Streak */}
-        <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 shadow-xs">
-          <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 mb-1 font-bold">
-            <Flame className="w-3.5 h-3.5 fill-amber-500" /> Streak
-          </div>
-          <div className="text-xl font-extrabold text-amber-700 dark:text-amber-300">
-            {streak} <span className="text-xs font-normal">days</span>
+          <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 flex items-center justify-center">
+            <TrendingUp className="w-5 h-5" />
           </div>
         </div>
       </div>
 
-      {/* Level Milestones & XP Progression (Section #19) */}
+      {/* 2. PRIMARY KPI GRID: Streak, Accuracy, Topic Strengths */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Streak & Record */}
+        <div className="p-5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 shadow-xs">
+          <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 font-bold mb-1">
+            <Flame className="w-4 h-4 fill-amber-500" /> Current Streak
+          </div>
+          <div className="text-2xl font-extrabold text-amber-700 dark:text-amber-300">
+            {streak} <span className="text-xs font-normal">days</span>
+          </div>
+          <div className="text-[11px] text-amber-600/80 mt-1">
+            Personal record: <strong>{longestStreak} days</strong>
+          </div>
+        </div>
+
+        {/* Quiz Accuracy */}
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
+            <Target className="w-4 h-4 text-emerald-500" /> Quiz Accuracy
+          </div>
+          <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">
+            {accuracy}%
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1">Across all test sessions</div>
+        </div>
+
+        {/* Strengths vs Weaknesses */}
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
+            <Zap className="w-4 h-4 text-indigo-500" /> Topic Mastery
+          </div>
+          <div className="text-2xl font-extrabold text-slate-900 dark:text-white">
+            <span className="text-emerald-600 dark:text-emerald-400">{strongTopics}</span>
+            <span className="text-xs text-slate-400 font-normal"> strong / </span>
+            <span className="text-amber-500">{learningTopics}</span>
+            <span className="text-xs text-slate-400 font-normal"> learning</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1">Competencies assessed</div>
+        </div>
+
+        {/* Tasks & Flashcards */}
+        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
+            <CheckCircle2 className="w-4 h-4 text-purple-500" /> Engagement
+          </div>
+          <div className="text-2xl font-extrabold text-slate-900 dark:text-white">
+            {tasksCompleted} <span className="text-xs font-normal text-slate-400">tasks</span>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1">
+            {flashcardsReviewed} flashcards reviewed
+          </div>
+        </div>
+      </div>
+
+      {/* 3. LEVEL & XP PROGRESSION */}
       <div className="p-6 rounded-3xl bg-gradient-to-r from-indigo-900 to-slate-900 text-white shadow-xl border border-indigo-800/50 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -170,7 +221,7 @@ export const ProgressPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Visual Charts: 7-Day Activity & Accuracy Breakdown */}
+      {/* 4. VISUAL CHARTS: 7-Day Activity & Accuracy Breakdown */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Weekly Study Time Chart */}
         <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">

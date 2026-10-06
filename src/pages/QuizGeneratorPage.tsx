@@ -49,7 +49,7 @@ export const QuizGeneratorPage: React.FC<QuizGeneratorPageProps> = ({
           }
         }
         if (histRes.status === 'fulfilled') {
-          setHistory(histRes.value.history || []);
+          setHistory(histRes.value.attempts || (histRes.value as any).history || []);
         }
       } catch (e) {
         console.error('Error loading quiz config:', e);

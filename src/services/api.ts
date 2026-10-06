@@ -13,6 +13,18 @@ import {
   Achievement,
   Bookmark,
   ReportItem,
+  Topic,
+  ChapterWithTopics,
+  Exam,
+  Homework,
+  DailyChallenge,
+  StudyPlan,
+  WeakTopic,
+  ChatSession,
+  ChatMessage,
+  NotificationItem,
+  AnalyticsOverview,
+  UserSettings,
 } from '../types';
 
 const API_BASE = '/api';
@@ -58,7 +70,7 @@ export const api = {
   getSubjects: () => request<{ subjects: Subject[] }>('/subjects'),
   getSubject: (id: number | string) => request<{ subject: Subject; chapters: Chapter[] }>(`/subjects/${id}`),
   createSubject: (body: any) => request<{ message: string; id: number }>('/subjects', { method: 'POST', body: JSON.stringify(body) }),
-  getChapter: (id: number | string) => request<{ chapter: Chapter; lessons: Lesson[]; stats: any }>(`/chapters/${id}`),
+  getChapter: (id: number | string) => request<{ chapter: Chapter; lessons: Lesson[]; topics?: Topic[]; stats: any }>(`/chapters/${id}`),
   getLesson: (id: number | string) => request<{ lesson: Lesson; navigation: { prevLesson: any; nextLesson: any } }>(`/lessons/${id}`),
   completeLesson: (id: number | string) => request<{ message: string; xpEarned: number; newXp: number; levelUp: boolean; newLevel: number; streak: number; unlockedAchievements: any[] }>(`/lessons/${id}/complete`, { method: 'POST' }),
 
@@ -92,7 +104,7 @@ export const api = {
       is_correct: boolean;
     }>;
   }>('/quizzes/submit', { method: 'POST', body: JSON.stringify(body) }),
-  getQuizHistory: () => request<{ history: QuizAttempt[] }>('/quizzes/history'),
+  getQuizHistory: () => request<{ attempts: QuizAttempt[] }>('/quizzes/history'),
 
   // Practice
   getPracticeQuestions: (params: { subject_id?: number | string; chapter_id?: number | string; difficulty?: string; limit?: number }) => {
@@ -182,4 +194,76 @@ export const api = {
   deleteAdminQuestion: (id: number) => request<{ message: string }>(`/admin/questions/${id}`, { method: 'DELETE' }),
   getAdminAiConfig: () => request<{ geminiApiKeySet: boolean; maskedKey: string; model: string }>('/admin/ai-config'),
   saveAdminAiConfig: (body: { apiKey?: string; model?: string }) => request<{ message: string }>('/admin/ai-config', { method: 'POST', body: JSON.stringify(body) }),
+
+  // Question Scanner
+  scanQuestion: (body: { imageBase64: string; mimeType?: string; notes?: string }) => request<{
+    questionText: string;
+    subject: string;
+    topic: string;
+    stepByStepSolution: string;
+    similarPracticeQuestions: Array<{ question: string; options: string[]; answer: string; explanation: string }>;
+    commonPitfalls: string;
+    isAiGenerated: boolean;
+  }>('/tutor/scan-question', { method: 'POST', body: JSON.stringify(body) }),
+
+  // AI Chat Sessions
+  getChatSessions: () => request<{ sessions: ChatSession[] }>('/tutor/sessions'),
+  createChatSession: (body: { title?: string; subject_id?: number; topic?: string }) => request<{ session: ChatSession }>('/tutor/sessions', { method: 'POST', body: JSON.stringify(body) }),
+  getChatSession: (id: number | string) => request<{ session: ChatSession; messages: ChatMessage[] }>(`/tutor/sessions/${id}`),
+  sendChatMessage: (sessionId: number | string, body: { message: string; action?: string }) => request<{ reply: string; suggestedFollowUps?: string[] }>(`/tutor/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteChatSession: (id: number | string) => request<{ message: string }>(`/tutor/sessions/${id}`, { method: 'DELETE' }),
+
+  // Topics & Chapter Manager
+  getChaptersWithTopics: (subjectId: number | string) => request<{ chapters: ChapterWithTopics[] }>(`/subjects/${subjectId}/chapters-with-topics`),
+  createTopic: (chapterId: number | string, body: { title: string; description?: string }) => request<{ message: string; id: number }>(`/chapters/${chapterId}/topics`, { method: 'POST', body: JSON.stringify(body) }),
+  updateTopicProgress: (topicId: number | string, status: string) => request<{ message: string; status: string; xpEarned: number }>(`/topics/${topicId}/progress`, { method: 'PUT', body: JSON.stringify({ status }) }),
+  createChapter: (subjectId: number | string, body: { title: string; description?: string }) => request<{ message: string; id: number }>(`/subjects/${subjectId}/chapters`, { method: 'POST', body: JSON.stringify(body) }),
+
+  // Weak Topic Detector
+  getWeakTopics: () => request<{ weakTopics: WeakTopic[] }>('/analytics/weak-topics'),
+
+  // Smart Daily Study Plan
+  getDailyPlan: () => request<StudyPlan>('/planner/daily-plan'),
+  updatePlanActivity: (activityId: number, status: string) => request<{ message: string; status: string; xpEarned: number; activities: StudyPlanActivity[] }>(`/planner/daily-plan/activity/${activityId}`, { method: 'PUT', body: JSON.stringify({ status }) }),
+  regenerateDailyPlan: () => request<{ message: string }>('/planner/daily-plan/regenerate', { method: 'POST' }),
+
+  // Exams (Exam Countdown)
+  getExams: () => request<{ exams: Exam[] }>('/exams'),
+  createExam: (body: any) => request<{ message: string; id: number }>('/exams', { method: 'POST', body: JSON.stringify(body) }),
+  deleteExam: (id: number) => request<{ message: string }>(`/exams/${id}`, { method: 'DELETE' }),
+
+  // Homework Tracker
+  getHomework: () => request<{ homework: Homework[] }>('/homework'),
+  createHomework: (body: any) => request<{ message: string; id: number }>('/homework', { method: 'POST', body: JSON.stringify(body) }),
+  updateHomework: (id: number, body: any) => request<{ message: string; xpEarned: number }>(`/homework/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteHomework: (id: number) => request<{ message: string }>(`/homework/${id}`, { method: 'DELETE' }),
+
+  // Daily Challenges
+  getDailyChallenge: () => request<{ challenges: DailyChallenge[] }>('/daily-challenge'),
+  claimDailyChallenge: (challenge_id: number) => request<{ message: string; xpEarned: number }>('/daily-challenge/claim', { method: 'POST', body: JSON.stringify({ challenge_id }) }),
+
+  // Smart Flashcards (AI & SM-2)
+  generateAiFlashcards: (body: { subject: string; topic: string; deck_id?: number; count?: number }) => request<{ cards: Array<{ front: string; back: string }>; message: string }>('/flashcards/generate-ai', { method: 'POST', body: JSON.stringify(body) }),
+  reviewFlashcardSm2: (cardId: number, rating: 'Again' | 'Hard' | 'Good' | 'Easy') => request<{ message: string; rating: string; newIntervalDays: number }>(`/flashcards/${cardId}/review`, { method: 'POST', body: JSON.stringify({ rating }) }),
+
+  // Analytics
+  getAnalyticsOverview: () => request<{
+    studySeconds: { today: number; thisWeek: number; thisMonth: number; total: number };
+    todayTargetMinutes: number;
+    quizMetrics: { averageAccuracy: number; totalQuizzes: number };
+    topicStrengths: { strong: number; learning: number };
+    tasksCompleted: number;
+    flashcardsReviewed: number;
+    streak: { current: number; longest: number };
+    xp: number;
+    level: number;
+  }>('/analytics/overview'),
+
+  // Settings
+  getSettings: () => request<{ settings: UserSettings }>('/settings'),
+  updateSettings: (body: any) => request<{ message: string }>('/settings', { method: 'PUT', body: JSON.stringify(body) }),
+  exportUserData: () => request<any>('/settings/export'),
+
+  // Notifications
+  getNotifications: () => request<{ notifications: NotificationItem[]; unreadCount: number }>('/notifications'),
 };

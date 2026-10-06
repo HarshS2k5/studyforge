@@ -11,6 +11,8 @@ import {
   ArrowLeft,
   X,
   Sparkles,
+  Brain,
+  Calendar,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { FlashcardDeck, Flashcard, Subject } from '../types';
@@ -26,10 +28,21 @@ export const FlashcardsPage: React.FC = () => {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
 
+  // Modals
   const [isNewDeckModalOpen, setIsNewDeckModalOpen] = useState(false);
   const [isAddCardModalOpen, setIsAddCardModalOpen] = useState(false);
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+
+  // Forms
   const [newDeck, setNewDeck] = useState({ title: '', description: '', subject_id: 1 });
   const [newCard, setNewCard] = useState({ front: '', back: '' });
+  const [aiForm, setAiForm] = useState({
+    subject: 'Mathematics',
+    topic: 'Fractions & Ratios',
+    deckId: 0,
+    count: 5,
+  });
+  const [aiGenerating, setAiGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,6 +57,10 @@ export const FlashcardsPage: React.FC = () => {
       ]);
       setDecks(deckRes.decks || []);
       setSubjects(subRes.subjects || []);
+      if (subRes.subjects && subRes.subjects.length > 0) {
+        setNewDeck(d => ({ ...d, subject_id: subRes.subjects[0].id }));
+        setAiForm(f => ({ ...f, subject: subRes.subjects[0].name }));
+      }
     } catch (e) {
       console.error('Failed to load flashcard decks:', e);
     } finally {
@@ -64,12 +81,12 @@ export const FlashcardsPage: React.FC = () => {
     }
   };
 
-  const handleRateCard = async (rating: 'easy' | 'medium' | 'hard') => {
+  const handleRateCardSm2 = async (rating: 'Again' | 'Hard' | 'Good' | 'Easy') => {
     const current = cards[currentCardIndex];
     if (!current) return;
 
     try {
-      await api.reviewFlashcard(current.id, rating);
+      await api.reviewFlashcardSm2(current.id, rating);
       if (user) {
         updateUserStats(user.xp + 5, user.level, false);
       }
@@ -93,7 +110,7 @@ export const FlashcardsPage: React.FC = () => {
     try {
       await api.createDeck(newDeck);
       setIsNewDeckModalOpen(false);
-      setNewDeck({ title: '', description: '', subject_id: 1 });
+      setNewDeck(d => ({ ...d, title: '', description: '' }));
       loadDecks();
     } catch (e) {
       console.error('Failed to create deck:', e);
@@ -114,6 +131,37 @@ export const FlashcardsPage: React.FC = () => {
     }
   };
 
+  const handleGenerateAiCards = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiForm.topic.trim()) return;
+
+    setAiGenerating(true);
+    try {
+      let targetDeckId = aiForm.deckId;
+      if (!targetDeckId && decks.length > 0) {
+        targetDeckId = decks[0].id;
+      }
+
+      await api.generateAiFlashcards({
+        subject: aiForm.subject,
+        topic: aiForm.topic,
+        deck_id: targetDeckId || undefined,
+        count: Number(aiForm.count) || 5,
+      });
+
+      setIsAiModalOpen(false);
+      await loadDecks();
+      if (activeDeck && activeDeck.id === targetDeckId) {
+        const refreshed = await api.getDeckCards(activeDeck.id);
+        setCards(refreshed.cards || []);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to generate flashcards with AI');
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
   const currentCard = cards[currentCardIndex];
 
   return (
@@ -122,20 +170,28 @@ export const FlashcardsPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-            <Layers className="w-7 h-7 text-indigo-500" /> Spaced-Repetition Flashcards
+            <Layers className="w-7 h-7 text-indigo-500" /> Smart Flashcards (SM-2 Spaced Repetition)
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Active recall with scheduled review intervals so challenging cards appear more frequently.
+            Active recall with scheduled intervals (Again, Hard, Good, Easy) for long-term retention.
           </p>
         </div>
 
         {!studyMode && (
-          <button
-            onClick={() => setIsNewDeckModalOpen(true)}
-            className="inline-flex items-center gap-2 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md shadow-indigo-500/20 transition-all self-start sm:self-auto cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> Create Deck
-          </button>
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setIsAiModalOpen(true)}
+              className="inline-flex items-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-semibold shadow-md shadow-purple-500/20 transition-all cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4" /> AI Card Generator
+            </button>
+            <button
+              onClick={() => setIsNewDeckModalOpen(true)}
+              className="inline-flex items-center gap-2 py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" /> Create Deck
+            </button>
+          </div>
         )}
       </div>
 
@@ -184,7 +240,7 @@ export const FlashcardsPage: React.FC = () => {
                 >
                   <div className="flex items-center justify-between text-xs opacity-75">
                     <span className="font-bold uppercase tracking-wider">
-                      {isFlipped ? 'Answer & Explanation' : 'Front • Question'}
+                      {isFlipped ? 'Answer & Explanation' : 'Prompt • Question'}
                     </span>
                     <span className="flex items-center gap-1">
                       <RotateCw className="w-3.5 h-3.5" /> Click to flip
@@ -192,45 +248,54 @@ export const FlashcardsPage: React.FC = () => {
                   </div>
 
                   <div className="my-auto py-6">
-                    <h3 className="text-xl sm:text-2xl font-bold leading-relaxed">
+                    <h3 className="text-xl sm:text-2xl font-bold leading-relaxed whitespace-pre-line">
                       {isFlipped ? currentCard.back : currentCard.front}
                     </h3>
                   </div>
 
-                  <div className="text-[11px] opacity-60">
-                    Difficulty rating: {currentCard.difficulty} • Repetitions: {currentCard.repetitions}
+                  <div className="text-[11px] opacity-60 flex items-center justify-between">
+                    <span>Repetitions: {currentCard.repetitions || 0}</span>
+                    <span>Interval: {currentCard.interval_days || 1} day(s)</span>
                   </div>
                 </div>
               </div>
 
-              {/* Spaced Review Rating Buttons (Section #11: Easy/Medium/Hard) */}
+              {/* SM-2 4-BUTTON REVIEW SYSTEM (Section #4: Again, Hard, Good, Easy) */}
               <div className="pt-2">
                 <div className="text-center text-xs font-semibold text-slate-400 mb-3">
-                  How well did you recall this card?
+                  Rate your recall accuracy:
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   <button
-                    onClick={() => handleRateCard('hard')}
-                    className="p-3 rounded-2xl border border-rose-300 dark:border-rose-900 bg-rose-50/50 dark:bg-rose-950/30 hover:bg-rose-100 text-rose-700 dark:text-rose-300 text-xs font-bold transition-all cursor-pointer text-center"
+                    onClick={() => handleRateCardSm2('Again')}
+                    className="p-3 rounded-2xl border border-rose-200 dark:border-rose-900 bg-rose-50/60 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-700 dark:text-rose-300 text-xs font-bold transition-all cursor-pointer text-center"
+                  >
+                    Again
+                    <span className="block text-[10px] font-normal text-rose-500 mt-0.5">Reset (1d)</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleRateCardSm2('Hard')}
+                    className="p-3 rounded-2xl border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-700 dark:text-amber-300 text-xs font-bold transition-all cursor-pointer text-center"
                   >
                     Hard
-                    <span className="block text-[10px] font-normal text-rose-500 mt-0.5">Review soon</span>
+                    <span className="block text-[10px] font-normal text-amber-500 mt-0.5">+20% (2d)</span>
                   </button>
 
                   <button
-                    onClick={() => handleRateCard('medium')}
-                    className="p-3 rounded-2xl border border-amber-300 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/30 hover:bg-amber-100 text-amber-700 dark:text-amber-300 text-xs font-bold transition-all cursor-pointer text-center"
+                    onClick={() => handleRateCardSm2('Good')}
+                    className="p-3 rounded-2xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50/60 dark:bg-indigo-950/40 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all cursor-pointer text-center"
                   >
-                    Medium
-                    <span className="block text-[10px] font-normal text-amber-500 mt-0.5">Review in 2d</span>
+                    Good
+                    <span className="block text-[10px] font-normal text-indigo-500 mt-0.5">2x (4d)</span>
                   </button>
 
                   <button
-                    onClick={() => handleRateCard('easy')}
-                    className="p-3 rounded-2xl border border-emerald-300 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/30 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition-all cursor-pointer text-center"
+                    onClick={() => handleRateCardSm2('Easy')}
+                    className="p-3 rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition-all cursor-pointer text-center"
                   >
                     Easy
-                    <span className="block text-[10px] font-normal text-emerald-500 mt-0.5">Mastered</span>
+                    <span className="block text-[10px] font-normal text-emerald-500 mt-0.5">2.5x (7d)</span>
                   </button>
                 </div>
               </div>
@@ -240,7 +305,7 @@ export const FlashcardsPage: React.FC = () => {
               <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No cards in this deck yet.</p>
               <button
                 onClick={() => setIsAddCardModalOpen(true)}
-                className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:underline"
+                className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:underline cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" /> Add First Card
               </button>
@@ -301,6 +366,120 @@ export const FlashcardsPage: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Modal: AI Flashcard Generator */}
+      {isAiModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-purple-600" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  AI Flashcard Generator
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsAiModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleGenerateAiCards} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Subject
+                </label>
+                <select
+                  value={aiForm.subject}
+                  onChange={e => setAiForm({ ...aiForm, subject: e.target.value })}
+                  className="w-full py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none"
+                >
+                  {subjects.map(s => (
+                    <option key={s.id} value={s.name}>
+                      {s.name}
+                    </option>
+                  ))}
+                  {subjects.length === 0 && <option value="Mathematics">Mathematics</option>}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Topic or Key Concept *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={aiForm.topic}
+                  onChange={e => setAiForm({ ...aiForm, topic: e.target.value })}
+                  placeholder="e.g. Mitosis vs Meiosis, Photosynthesis, Quadratic Formula"
+                  className="w-full py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Target Deck
+                </label>
+                <select
+                  value={aiForm.deckId}
+                  onChange={e => setAiForm({ ...aiForm, deckId: Number(e.target.value) })}
+                  className="w-full py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none"
+                >
+                  <option value={0}>Auto-select or use first deck</option>
+                  {decks.map(d => (
+                    <option key={d.id} value={d.id}>
+                      {d.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Number of Cards
+                </label>
+                <select
+                  value={aiForm.count}
+                  onChange={e => setAiForm({ ...aiForm, count: Number(e.target.value) })}
+                  className="w-full py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none"
+                >
+                  <option value={5}>5 Cards</option>
+                  <option value={8}>8 Cards</option>
+                  <option value={10}>10 Cards</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAiModalOpen(false)}
+                  className="py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={aiGenerating}
+                  className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-purple-500/20 flex items-center gap-1.5 cursor-pointer"
+                >
+                  {aiGenerating ? (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 animate-spin" /> Synthesizing Cards...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" /> Generate Deck
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
